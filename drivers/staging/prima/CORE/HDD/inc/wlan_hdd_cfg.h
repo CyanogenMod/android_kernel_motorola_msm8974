@@ -1519,6 +1519,13 @@ typedef enum
 #define CFG_OBSS_HT40_SCAN_WIDTH_TRIGGER_INTERVAL_MAX             ( 900 )
 #define CFG_OBSS_HT40_SCAN_WIDTH_TRIGGER_INTERVAL_DEFAULT         ( 200 )
 
+/* RPS configurations */
+#define CFG_RPS_CPU_MAP_MIN                        (0)
+#define CFG_RPS_CPU_MAP_MAX                        (0xff)
+
+#define CFG_RPS_CPU_MAP_NAME                       "rps_mask"
+#define CFG_RPS_CPU_MAP_DEFAULT                    (0x00)
+
 #define CFG_MULTICAST_HOST_FW_MSGS          "gMulticastHostMsgs"
 #define CFG_MULTICAST_HOST_FW_MSGS_MIN      (0)
 #define CFG_MULTICAST_HOST_FW_MSGS_MAX      (1)
@@ -1541,6 +1548,16 @@ typedef enum
 #define CFG_DEFAULT_RATE_INDEX_24GH_MIN           ( 1 )
 #define CFG_DEFAULT_RATE_INDEX_24GH_MAX           ( 7 )
 #define CFG_DEFAULT_RATE_INDEX_24GH_DEFAULT       ( 1 )
+
+
+/*
+ * This INI item is used to control subsystem restart(SSR) test framework
+ * Set its value to 1 to enable APPS trigerred SSR testing
+ */
+#define CFG_ENABLE_CRASH_INJECT "gEnableForceTargetAssert"
+#define CFG_ENABLE_CRASH_INJECT_MIN (0)
+#define CFG_ENABLE_CRASH_INJECT_MAX (1)
+#define CFG_ENABLE_CRASH_INJECT_DEFAULT (0)
 
 static __inline tANI_U32 defHddRateToDefCfgRate( tANI_U32 defRateIndex )
 {
@@ -3046,6 +3063,8 @@ typedef struct
    v_U32_t                     linkFailTxCnt;
    v_BOOL_t                    ignorePeerHTopMode;
    v_U8_t                      gOptimizeCAevent;
+   v_BOOL_t                    crash_inject_enabled;
+   v_U16_t                      rps_mask;
 } hdd_config_t;
 
 /*--------------------------------------------------------------------------- 
