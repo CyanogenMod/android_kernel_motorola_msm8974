@@ -2823,10 +2823,16 @@ static int msm8x10_wcd_enable_ext_mb_source(struct snd_soc_codec *codec,
 
 #ifndef CONFIG_SND_SOC_TPA6165A2
 static int msm8x10_wcd_enable_mbhc_micbias(struct snd_soc_codec *codec,
-	 bool enable)
+					   bool enable,
+					   enum wcd9xxx_micbias_num micb_num)
 {
 	int rc;
 	struct msm8x10_wcd_priv *msm8x10_wcd = snd_soc_codec_get_drvdata(codec);
+
+	if (micb_num != MBHC_MICBIAS1) {
+		rc = -EINVAL;
+		goto err;
+	}
 
 	if (enable)
 		rc = snd_soc_dapm_force_enable_pin(&codec->dapm,
@@ -2843,6 +2849,7 @@ static int msm8x10_wcd_enable_mbhc_micbias(struct snd_soc_codec *codec,
 	}
 	snd_soc_dapm_sync(&codec->dapm);
 
+err:
 	if (rc)
 		pr_debug("%s: Failed to force %s micbias", __func__,
 			enable ? "enable" : "disable");
