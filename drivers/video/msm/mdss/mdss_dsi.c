@@ -839,6 +839,12 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata)
 		}
 	}
 
+	if (pdata->panel_info.type == MIPI_VIDEO_PANEL &&
+			ctrl_pdata->off_cmds.link_state == DSI_LP_MODE) {
+		mdss_dsi_sw_reset(pdata);
+		mdss_dsi_host_init(pdata);
+	}
+
 	mdss_dsi_op_mode_config(DSI_CMD_MODE, pdata);
 
 	if (pdata->panel_info.dynamic_switch_pending) {
@@ -1085,15 +1091,10 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		rc = mdss_dsi_off(pdata);
 		break;
 	case MDSS_EVENT_CONT_SPLASH_FINISH:
+		if (ctrl_pdata->off_cmds.link_state == DSI_LP_MODE)
+			rc = mdss_dsi_blank(pdata);
 		ctrl_pdata->ctrl_state &= ~CTRL_STATE_MDP_ACTIVE;
-		if (ctrl_pdata->on_cmds.link_state == DSI_LP_MODE) {
-			rc = mdss_dsi_cont_splash_on(pdata);
-		} else {
-			pr_debug("%s:event=%d, Dsi On not called: ctrl_state: %d\n",
-				 __func__, event,
-				 ctrl_pdata->on_cmds.link_state);
-			rc = -EINVAL;
-		}
+		rc = mdss_dsi_cont_splash_on(pdata);
 		break;
 	case MDSS_EVENT_PANEL_CONT_SPLASH_FINISH:
 		if (ctrl_pdata->cont_splash_on)
