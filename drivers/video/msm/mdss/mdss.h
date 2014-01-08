@@ -120,6 +120,7 @@ struct mdss_data_type {
 	u32 has_no_lut_read;
 	u8 has_wb_ad;
 
+	u32 rotator_ot_limit;
 	u32 mdp_irq_mask;
 	u32 mdp_hist_irq_mask;
 
