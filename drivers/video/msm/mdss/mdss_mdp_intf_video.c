@@ -304,6 +304,7 @@ static int mdss_mdp_video_stop(struct mdss_mdp_ctl *ctl)
 {
 	struct mdss_mdp_video_ctx *ctx;
 	struct mdss_mdp_vsync_handler *tmp, *handle;
+	struct mdss_mdp_ctl *sctl;
 	int rc;
 	u32 frame_rate = 0;
 
@@ -346,6 +347,11 @@ static int mdss_mdp_video_stop(struct mdss_mdp_ctl *ctl)
 
 		mdss_mdp_irq_disable(MDSS_MDP_IRQ_INTF_UNDER_RUN,
 			ctl->intf_num);
+
+		sctl = mdss_mdp_get_split_ctl(ctl);
+		if (sctl)
+			mdss_mdp_irq_disable(MDSS_MDP_IRQ_INTF_UNDER_RUN,
+				sctl->intf_num);
 
 		mdss_bus_bandwidth_ctrl(false);
 	}
@@ -701,6 +707,7 @@ static int mdss_mdp_video_config_fps(struct mdss_mdp_ctl *ctl,
 static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 {
 	struct mdss_mdp_video_ctx *ctx;
+	struct mdss_mdp_ctl *sctl;
 	struct mdss_panel_data *pdata = ctl->panel_data;
 	int rc;
 
@@ -749,6 +756,11 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
 
 		mdss_mdp_irq_enable(MDSS_MDP_IRQ_INTF_UNDER_RUN, ctl->intf_num);
+
+		sctl = mdss_mdp_get_split_ctl(ctl);
+		if (sctl)
+			mdss_mdp_irq_enable(MDSS_MDP_IRQ_INTF_UNDER_RUN,
+				sctl->intf_num);
 
 		mdss_bus_bandwidth_ctrl(true);
 
