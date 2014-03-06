@@ -333,6 +333,10 @@ struct mdss_panel_info {
 	bool ulps_feature_enabled;
 	char dfps_update;
 	int new_fps;
+	u32 xstart_pix_align;
+	u32 width_pix_align;
+	u32 ystart_pix_align;
+	u32 height_pix_align;
 
 	u32 cont_splash_enabled;
 	u32 cont_splash_feature_on;
