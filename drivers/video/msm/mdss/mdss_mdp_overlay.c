@@ -59,6 +59,7 @@ static atomic_t ov_active_panels = ATOMIC_INIT(0);
 static int mdss_mdp_overlay_free_fb_pipe(struct msm_fb_data_type *mfd);
 static int mdss_mdp_overlay_fb_parse_dt(struct msm_fb_data_type *mfd);
 static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd);
+static void __overlay_kickoff_requeue(struct msm_fb_data_type *mfd);
 static void mdss_mdp5_dump_ctl(void *data);
 static void __vsync_retire_signal(struct msm_fb_data_type *mfd, int val);
 
@@ -67,7 +68,6 @@ static inline u32 left_lm_w_from_mfd(struct msm_fb_data_type *mfd)
 	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
 	return ctl->mixer_left->width;
 }
-static void __overlay_kickoff_requeue(struct msm_fb_data_type *mfd);
 
 static int mdss_mdp_overlay_sd_ctrl(struct msm_fb_data_type *mfd,
 					unsigned int enable)
@@ -1138,50 +1138,6 @@ static int __overlay_queue_pipes(struct msm_fb_data_type *mfd)
 	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
 	struct mdss_mdp_ctl *tmp;
 	int ret = 0;
-	int sd_in_pipe = 0;
-
-	if (!ctl) {
-		pr_warn("kickoff on fb=%d without a ctl attched\n", mfd->index);
-		return ret;
-	}
-
-	ATRACE_BEGIN(__func__);
-
-	if (ctl->shared_lock) {
-		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_BEGIN);
-		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_READY);
-		mutex_lock(ctl->shared_lock);
-	}
-
-	mutex_lock(&mdp5_data->ov_lock);
-	mutex_lock(&mfd->lock);
-
-	/*
-	 * check if there is a secure display session
-	 */
-	list_for_each_entry(pipe, &mdp5_data->pipes_used, used_list) {
-		if (pipe->flags & MDP_SECURE_DISPLAY_OVERLAY_SESSION) {
-			sd_in_pipe |= 1;
-			pr_debug("Secure pipe: %u : %08X\n",
-					pipe->num, pipe->flags);
-		}
-	}
-	/*
-	 * If there is no secure display session and sd_enabled, disable the
-	 * secure display session
-	 */
-	if (!sd_in_pipe && mdp5_data->sd_enabled) {
-		if (0 == mdss_mdp_overlay_sd_ctrl(mfd, 0))
-			mdp5_data->sd_enabled = 0;
-	}
-
-	if (!ctl->shared_lock)
-		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_BEGIN);
-
-	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
-
-	if (data)
-		mdss_mdp_set_roi(ctl, data);
 
 	list_for_each_entry(pipe, &mdp5_data->pipes_used, used_list) {
 		struct mdss_mdp_data *buf;
@@ -1271,11 +1227,8 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	int ret = 0;
 	int sd_in_pipe = 0;
 
-	if (ctl->shared_lock) {
-		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_BEGIN);
-		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_READY);
+	if (ctl->shared_lock)
 		mutex_lock(ctl->shared_lock);
-	}
 
 	mutex_lock(&mdp5_data->ov_lock);
 	mutex_lock(&mfd->lock);
@@ -1299,9 +1252,7 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 			mdp5_data->sd_enabled = 0;
 	}
 
-	if (!ctl->shared_lock)
-		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_BEGIN);
-
+	mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_BEGIN);
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
 
 	if (data)
