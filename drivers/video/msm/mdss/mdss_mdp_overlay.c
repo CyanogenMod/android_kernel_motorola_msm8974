@@ -975,6 +975,8 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 		return ret;
 	}
 
+	ATRACE_BEGIN(__func__);
+
 	if (ctl->shared_lock) {
 		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_BEGIN);
 		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_READY);
@@ -1078,10 +1080,14 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 		}
 	}
 
-	if (mfd->panel.type == WRITEBACK_PANEL)
+	if (mfd->panel.type == WRITEBACK_PANEL) {
 		ret = mdss_mdp_wb_kickoff(mfd);
-	else
+		ATRACE_END("wb_kickoff");
+	} else {
+		ATRACE_BEGIN("display_commit");
 		ret = mdss_mdp_display_commit(mdp5_data->ctl, NULL);
+		ATRACE_END("display_commit");
+	}
 
 	atomic_set(&mfd->kickoff_pending, 0);
 	wake_up_all(&mfd->kickoff_wait_q);
@@ -1093,7 +1099,9 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	mutex_unlock(&mdp5_data->ov_lock);
 	mdss_mdp_overlay_update_pm(mdp5_data);
 
+	ATRACE_BEGIN("display_wait4comp");
 	ret = mdss_mdp_display_wait4comp(mdp5_data->ctl);
+	ATRACE_END("display_wait4comp");
 	mutex_lock(&mdp5_data->ov_lock);
 
 	if (ret == 0) {
@@ -1108,14 +1116,16 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 
 	mdss_fb_update_notify_update(mfd);
 commit_fail:
+	ATRACE_BEGIN("overlay_cleanup");
 	mdss_mdp_overlay_cleanup(mfd);
+	ATRACE_END("overlay_cleanup");
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
 	mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_FLUSHED);
 
 	mutex_unlock(&mdp5_data->ov_lock);
 	if (ctl->shared_lock)
 		mutex_unlock(ctl->shared_lock);
-
+	ATRACE_END(__func__);
 	return ret;
 }
 
