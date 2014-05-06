@@ -302,6 +302,7 @@ Optional properties:
 - qcom,cmd-to-video-mode-switch-commands:	List of commands that need to be sent
 					to panel in order to switch from command mode to video mode dynamically.
 					Refer to "qcom,mdss-dsi-on-command" section for adding commands.
+- qcom,esd-check-enabled:		Boolean used to enable ESD recovery feature.
 - qcom,mdss-dsi-panel-status-command:	A byte stream formed by multiple dcs packets based on
 					qcom dsi controller protocol, to read the panel status.
 					This value is used to kick in the ESD recovery.
@@ -433,6 +434,7 @@ Example:
 		qcom,video-to-cmd-mode-switch-commands = [15 01 00 00 00 00 02 C2 0B
 						15 01 00 00 00 00 02 C2 08];
 		qcom,cmd-to-video-mode-switch-commands = [15 01 00 00 00 00 02 C2 03];
+		qcom,esd-check-enabled;
 		qcom,mdss-dsi-panel-status-command = [06 01 00 01 05 00 02 0A 08];
 		qcom,mdss-dsi-panel-status-command-state = "dsi_lp_mode";
 		qcom,mdss-dsi-panel-status-check-mode = "reg_read";
