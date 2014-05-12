@@ -1447,7 +1447,9 @@ static int msm_routing_ec_ref_rx_get(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
 	pr_debug("%s: ec_ref_rx  = %d", __func__, msm_route_ec_ref_rx);
+	mutex_lock(&routing_lock);
 	ucontrol->value.integer.value[0] = msm_route_ec_ref_rx;
+	mutex_unlock(&routing_lock);
 	return 0;
 }
 
