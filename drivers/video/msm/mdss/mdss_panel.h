@@ -175,6 +175,7 @@ enum mdss_intf_events {
 	MDSS_EVENT_ENABLE_TE,
 	MDSS_EVENT_ENABLE_HBM,
 	MDSS_EVENT_SET_CABC,
+	MDSS_EVENT_REGISTER_RECOVERY_HANDLER,
 };
 
 struct lcd_panel_info {
