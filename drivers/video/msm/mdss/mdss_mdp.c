@@ -758,8 +758,6 @@ void mdss_mdp_clk_ctrl(int enable, int isr)
 		if (mdata->vsync_ena)
 			mdss_mdp_clk_update(MDSS_CLK_MDP_VSYNC, enable);
 
-		mdss_bus_bandwidth_ctrl(enable);
-
 		if (!enable)
 			mdss_mdp_footswitch_ctrl(mdata, false);
 	}
