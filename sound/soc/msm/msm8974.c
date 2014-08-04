@@ -91,7 +91,7 @@ static int tfa9890_left_active;
 static int tfa9890_right_active;
 static int msm8974_tfa9890_earpiece;
 
-#define ADSP_STATE_READY_TIMEOUT_MS 3000
+#define ADSP_STATE_READY_TIMEOUT_MS 50
 
 static inline int param_is_mask(int p)
 {
