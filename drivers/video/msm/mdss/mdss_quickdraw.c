@@ -476,6 +476,9 @@ static int mdss_quickdraw_cleanup(void *data)
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)(data);
 	int ret = 0;
+	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
+	LIST_HEAD(destroy_pipes);
+	struct mdss_mdp_pipe *pipe, *tmp;
 
 	pr_debug("%s+\n", __func__);
 
@@ -490,7 +493,12 @@ static int mdss_quickdraw_cleanup(void *data)
 	}
 	active_mdss_buffer = NULL;
 
-	mdss_mdp_overlay_cleanup(mfd);
+	mutex_lock(&mdp5_data->list_lock);
+	list_for_each_entry_safe(pipe, tmp, &mdp5_data->pipes_cleanup, list) {
+		list_move(&pipe->list, &destroy_pipes);
+	}
+	mutex_unlock(&mdp5_data->list_lock);
+	mdss_mdp_overlay_cleanup(mfd, &destroy_pipes);
 
 	ret = mdss_fb_blank_sub(FB_BLANK_NORMAL, mfd->fbi, true);
 
