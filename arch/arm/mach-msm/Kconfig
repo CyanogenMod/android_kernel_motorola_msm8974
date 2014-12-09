@@ -1142,6 +1142,10 @@ config MACH_FSM9XXX_SURF
 	  chipset based SURF evaluation board and
 	  FFA board.
 
+config MACH_VICTARA
+	bool "Victara"
+	default n
+
 endmenu
 
 config MSM_STACKED_MEMORY
