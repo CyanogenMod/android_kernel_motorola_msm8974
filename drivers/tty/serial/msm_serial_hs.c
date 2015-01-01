@@ -3601,11 +3601,7 @@ static void msm_hs_shutdown(struct uart_port *uport)
 	}
 	tasklet_kill(&msm_uport->tx.tlet);
 	BUG_ON(msm_uport->rx.flush < FLUSH_STOP);
-	ret = wait_event_timeout(msm_uport->rx.wait,
-			msm_uport->rx.flush == FLUSH_SHUTDOWN, HZ);
-	if (!ret)
-		pr_err("%s(): HSUART RX Stall.\n", __func__);
-
+	wait_event(msm_uport->rx.wait, msm_uport->rx.flush == FLUSH_SHUTDOWN);
 	tasklet_kill(&msm_uport->rx.tlet);
 	cancel_delayed_work_sync(&msm_uport->rx.flip_insert_work);
 	flush_workqueue(msm_uport->hsuart_wq);
