@@ -614,7 +614,7 @@ static int mdss_fb_probe(struct platform_device *pdev)
 	mfd->quickdraw_in_progress = false;
 	mfd->quickdraw_reset_panel = false;
 	if (mfd->panel_info->cont_splash_feature_on) {
-		mfd->bl_level_old = mfd->panel_info->bl_max;
+		mfd->bl_level_scaled = mfd->panel_info->bl_max;
 		mfd->bl_updated = true;
 	}
 
@@ -1697,7 +1697,7 @@ static int mdss_fb_release_all(struct fb_info *info, struct file *file)
 		if (pdata && pdata->set_backlight &&
 			mfd->panel_info->type == MIPI_VIDEO_PANEL) {
 			mutex_lock(&mfd->bl_lock);
-			if (mfd->bl_level_old != 0)
+			if (mfd->bl_level_scaled != 0)
 				pdata->set_backlight(pdata, 0);
 			mutex_unlock(&mfd->bl_lock);
 		}
@@ -1712,7 +1712,7 @@ static int mdss_fb_release_all(struct fb_info *info, struct file *file)
 
 		mutex_lock(&mfd->bl_lock);
 		if (!mfd->unset_bl_level)
-			mfd->unset_bl_level = mfd->bl_level_old;
+			mfd->unset_bl_level = mfd->bl_level_scaled;
 		mutex_unlock(&mfd->bl_lock);
 
 		atomic_set(&mfd->ioctl_ref_cnt, 0);
