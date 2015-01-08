@@ -73,6 +73,7 @@ static void mdss_dsi_panel_bklt_pwm(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 {
 	int ret;
 	u32 duty;
+	u32 period_ns;
 
 	if (ctrl->pwm_bl == NULL) {
 		pr_err("%s: no PWM\n", __func__);
@@ -101,10 +102,23 @@ static void mdss_dsi_panel_bklt_pwm(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 		ctrl->pwm_enabled = 0;
 	}
 
-	ret = pwm_config_us(ctrl->pwm_bl, duty, ctrl->pwm_period);
-	if (ret) {
-		pr_err("%s: pwm_config_us() failed err=%d.\n", __func__, ret);
-		return;
+	if (ctrl->pwm_period >= USEC_PER_SEC) {
+		ret = pwm_config_us(ctrl->pwm_bl, duty, ctrl->pwm_period);
+		if (ret) {
+			pr_err("%s: pwm_config_us() failed err=%d.\n",
+					__func__, ret);
+			return;
+		}
+	} else {
+		period_ns = ctrl->pwm_period * NSEC_PER_USEC;
+		ret = pwm_config(ctrl->pwm_bl,
+				level * period_ns / ctrl->bklt_max,
+				period_ns);
+		if (ret) {
+			pr_err("%s: pwm_config() failed err=%d.\n",
+					__func__, ret);
+			return;
+		}
 	}
 
 	ret = pwm_enable(ctrl->pwm_bl);
@@ -357,6 +371,36 @@ static int mdss_dsi_panel_partial_update(struct mdss_panel_data *pdata)
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 
 	return rc;
+}
+
+static void mdss_dsi_panel_switch_mode(struct mdss_panel_data *pdata,
+							int mode)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	struct mipi_panel_info *mipi;
+	struct dsi_panel_cmds *pcmds;
+
+	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return;
+	}
+
+	mipi  = &pdata->panel_info.mipi;
+
+	if (!mipi->dynamic_switch_enabled)
+		return;
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	if (mode == DSI_CMD_MODE)
+		pcmds = &ctrl_pdata->video2cmd;
+	else
+		pcmds = &ctrl_pdata->cmd2video;
+
+	mdss_dsi_panel_cmds_send(ctrl_pdata, pcmds);
+
+	return;
 }
 
 static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
@@ -1062,7 +1106,7 @@ static int mdss_panel_parse_panel_reg_dt(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 	return rc;
 }
 
-static int mdss_panel_dt_get_dst_fmt(u32 bpp, char mipi_mode, u32 pixel_packing,
+int mdss_panel_get_dst_fmt(u32 bpp, char mipi_mode, u32 pixel_packing,
 				char *dst_format)
 {
 	int rc = 0;
@@ -1185,6 +1229,41 @@ static int mdss_dsi_parse_fbc_params(struct device_node *np,
 	return 0;
 }
 
+static void mdss_panel_parse_te_params(struct device_node *np,
+				       struct mdss_panel_info *panel_info)
+{
+
+	u32 tmp;
+	int rc = 0;
+	/*
+	 * TE default: dsi byte clock calculated base on 70 fps;
+	 * around 14 ms to complete a kickoff cycle if te disabled;
+	 * vclk_line base on 60 fps; write is faster than read;
+	 * init == start == rdptr;
+	 */
+	panel_info->te.tear_check_en =
+		!of_property_read_bool(np, "qcom,mdss-tear-check-disable");
+	rc = of_property_read_u32
+		(np, "qcom,mdss-tear-check-sync-cfg-height", &tmp);
+	panel_info->te.sync_cfg_height = (!rc ? tmp : 0xfff0);
+	rc = of_property_read_u32
+		(np, "qcom,mdss-tear-check-sync-init-val", &tmp);
+	panel_info->te.vsync_init_val = (!rc ? tmp : panel_info->yres);
+	rc = of_property_read_u32
+		(np, "qcom,mdss-tear-check-sync-threshold-start", &tmp);
+	panel_info->te.sync_threshold_start = (!rc ? tmp : 4);
+	rc = of_property_read_u32
+		(np, "qcom,mdss-tear-check-sync-threshold-continue", &tmp);
+	panel_info->te.sync_threshold_continue = (!rc ? tmp : 4);
+	rc = of_property_read_u32(np, "qcom,mdss-tear-check-start-pos", &tmp);
+	panel_info->te.start_pos = (!rc ? tmp : panel_info->yres);
+	rc = of_property_read_u32
+		(np, "qcom,mdss-tear-check-rd-ptr-trigger-intr", &tmp);
+	panel_info->te.rd_ptr_irq = (!rc ? tmp : panel_info->yres + 1);
+	rc = of_property_read_u32(np, "qcom,mdss-tear-check-frame-rate", &tmp);
+	panel_info->te.refx100 = (!rc ? tmp : 6000);
+}
+
 static int mdss_panel_parse_reset_seq(struct device_node *np, const char *name,
 				int rst_seq[MDSS_DSI_RST_SEQ_LEN], int *rst_len)
 {
@@ -1299,6 +1378,39 @@ int mdss_panel_parse_panel_config_dt(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 	return 0;
 }
 
+static void mdss_dsi_parse_roi_alignment(struct device_node *np,
+		struct mdss_panel_info *pinfo)
+{
+	int len = 0;
+	u32 value[6];
+	struct property *data;
+	data = of_find_property(np, "qcom,panel-roi-alignment", &len);
+	len /= sizeof(u32);
+	if (!data || (len != 6)) {
+		pr_debug("%s: Panel roi alignment not found", __func__);
+	} else {
+		int rc = of_property_read_u32_array(np,
+				"qcom,panel-roi-alignment", value, len);
+		if (rc)
+			pr_debug("%s: Error reading panel roi alignment values",
+					__func__);
+		else {
+			pinfo->xstart_pix_align = value[0];
+			pinfo->width_pix_align = value[1];
+			pinfo->ystart_pix_align = value[2];
+			pinfo->height_pix_align = value[3];
+			pinfo->min_width = value[4];
+			pinfo->min_height = value[5];
+		}
+
+		pr_debug("%s: ROI alignment: [%d, %d, %d, %d, %d, %d]",
+				__func__, pinfo->xstart_pix_align,
+				pinfo->width_pix_align, pinfo->ystart_pix_align,
+				pinfo->height_pix_align, pinfo->min_width,
+				pinfo->min_height);
+	}
+}
+
 static int mdss_dsi_parse_panel_features(struct device_node *np,
 	struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -1325,6 +1437,25 @@ static int mdss_dsi_parse_panel_features(struct device_node *np,
 		"qcom,ulps-enabled");
 	pr_info("%s: ulps feature %s", __func__,
 		(pinfo->ulps_feature_enabled ? "enabled" : "disabled"));
+
+	pinfo->mipi.dynamic_switch_enabled = of_property_read_bool(np,
+		"qcom,dynamic-mode-switch-enabled");
+
+	if (pinfo->mipi.dynamic_switch_enabled) {
+		mdss_dsi_parse_dcs_cmds(np, &ctrl->video2cmd,
+			"qcom,video-to-cmd-mode-switch-commands", NULL);
+
+		mdss_dsi_parse_dcs_cmds(np, &ctrl->cmd2video,
+			"qcom,cmd-to-video-mode-switch-commands", NULL);
+
+		if (!ctrl->video2cmd.cmd_cnt || !ctrl->cmd2video.cmd_cnt) {
+			pr_warn("No commands specified for dynamic switch\n");
+			pinfo->mipi.dynamic_switch_enabled = 0;
+		}
+	}
+
+	pr_info("%s: dynamic switch feature enabled: %d", __func__,
+		pinfo->mipi.dynamic_switch_enabled);
 
 	return 0;
 }
@@ -1569,9 +1700,11 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	tmp = 0;
 	data = of_get_property(np, "qcom,mdss-dsi-pixel-packing", NULL);
 	if (data && !strcmp(data, "loose"))
-		tmp = 1;
-	rc = mdss_panel_dt_get_dst_fmt(pinfo->bpp,
-		pinfo->mipi.mode, tmp,
+		pinfo->mipi.pixel_packing = 1;
+	else
+		pinfo->mipi.pixel_packing = 0;
+	rc = mdss_panel_get_dst_fmt(pinfo->bpp,
+		pinfo->mipi.mode, pinfo->mipi.pixel_packing,
 		&(pinfo->mipi.dst_format));
 	if (rc) {
 		pr_debug("%s: problem determining dst format. Set Default\n",
@@ -1592,13 +1725,14 @@ static int mdss_panel_parse_dt(struct device_node *np,
 		else if (!strcmp(pdest, "display_2"))
 			pinfo->pdest = DISPLAY_2;
 		else {
-			pr_debug("%s: pdest not specified. Set Default\n",
-								__func__);
+			pr_debug("%s: incorrect pdest. Set Default\n",
+				__func__);
 			pinfo->pdest = DISPLAY_1;
 		}
 	} else {
-		pr_err("%s: pdest not specified\n", __func__);
-		return -EINVAL;
+		pr_debug("%s: pdest not specified. Set Default\n",
+				__func__);
+		pinfo->pdest = DISPLAY_1;
 	}
 	rc = of_property_read_u32(np, "qcom,mdss-dsi-h-front-porch", &tmp);
 	pinfo->lcdc.h_front_porch = (!rc ? tmp : 6);
@@ -1708,6 +1842,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 		"qcom,mdss-dsi-hsa-power-mode");
 	pinfo->mipi.hbp_power_stop = of_property_read_bool(np,
 		"qcom,mdss-dsi-hbp-power-mode");
+	pinfo->mipi.last_line_interleave_en = of_property_read_bool(np,
+		"qcom,mdss-dsi-last-line-interleave");
 	pinfo->mipi.bllp_power_stop = of_property_read_bool(np,
 		"qcom,mdss-dsi-bllp-power-mode");
 	pinfo->mipi.eof_bllp_power_stop = of_property_read_bool(
@@ -1805,6 +1941,7 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	pinfo->mipi.init_delay = (!rc ? tmp : 0);
 
 	mdss_dsi_parse_fbc_params(np, pinfo);
+	mdss_dsi_parse_roi_alignment(np, pinfo);
 
 	mdss_dsi_parse_trigger(np, &(pinfo->mipi.mdp_trigger),
 		"qcom,mdss-dsi-mdp-trigger");
@@ -1816,6 +1953,7 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	mdss_dsi_parse_reset_seq(np, pinfo->rst_seq, &(pinfo->rst_seq_len),
 		"qcom,mdss-dsi-reset-sequence");
+	mdss_panel_parse_te_params(np, pinfo);
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->on_cmds,
 		"qcom,mdss-dsi-on-command", "qcom,mdss-dsi-on-command-state");
@@ -2078,6 +2216,9 @@ int mdss_dsi_panel_init(struct device_node *node,
 	pr_debug("%s: MMI partial mode %s", __func__,
 		ctrl_pdata->partial_mode_enabled ? "enabled" : "disabled");
 
+	pinfo->dynamic_switch_pending = false;
+	pinfo->is_lpm_mode = false;
+
 	ctrl_pdata->on = mdss_dsi_panel_on;
 	ctrl_pdata->off = mdss_dsi_panel_off;
 	ctrl_pdata->panel_data.set_backlight = mdss_dsi_panel_bl_ctrl;
@@ -2087,6 +2228,7 @@ int mdss_dsi_panel_init(struct device_node *node,
 	ctrl_pdata->check_status = mdss_panel_check_status;
 	ctrl_pdata->set_hbm = mdss_dsi_panel_set_hbm;
 	ctrl_pdata->set_cabc = mdss_dsi_panel_set_cabc;
+	ctrl_pdata->switch_mode = mdss_dsi_panel_switch_mode;
 
 	return 0;
 }

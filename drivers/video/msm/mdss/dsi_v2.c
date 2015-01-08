@@ -17,7 +17,6 @@
 #include <linux/iopoll.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
-#include <linux/uaccess.h>
 
 #include "dsi_v2.h"
 
@@ -53,6 +52,37 @@ static int dsi_on(struct mdss_panel_data *pdata)
 	return rc;
 }
 
+static int dsi_update_pconfig(struct mdss_panel_data *pdata,
+				int mode)
+{
+	int ret = 0;
+	struct mdss_panel_info *pinfo = &pdata->panel_info;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	if (!pdata)
+		return -ENODEV;
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	if (mode == DSI_CMD_MODE) {
+		pinfo->mipi.mode = DSI_CMD_MODE;
+		pinfo->type = MIPI_CMD_PANEL;
+		pinfo->mipi.vsync_enable = 1;
+		pinfo->mipi.hw_vsync_mode = 1;
+	} else {
+		pinfo->mipi.mode = DSI_VIDEO_MODE;
+		pinfo->type = MIPI_VIDEO_PANEL;
+		pinfo->mipi.vsync_enable = 0;
+		pinfo->mipi.hw_vsync_mode = 0;
+	}
+
+	ctrl_pdata->panel_mode = pinfo->mipi.mode;
+	mdss_panel_get_dst_fmt(pinfo->bpp, pinfo->mipi.mode,
+			pinfo->mipi.pixel_packing, &(pinfo->mipi.dst_format));
+	pinfo->cont_splash_enabled = 0;
+
+	return ret;
+}
+
 static int dsi_panel_handler(struct mdss_panel_data *pdata, int enable)
 {
 	int rc = 0;
@@ -65,54 +95,50 @@ static int dsi_panel_handler(struct mdss_panel_data *pdata, int enable)
 				panel_data);
 
 	if (enable) {
+		if (!pdata->panel_info.dynamic_switch_pending) {
+			if (pdata->panel_info.type == MIPI_CMD_PANEL)
+				dsi_ctrl_gpio_request(ctrl_pdata);
+			mdss_dsi_panel_reset(pdata, 1);
+		}
 		pdata->panel_info.panel_power_on = 1;
-		if (ctrl_pdata->on)
-			ctrl_pdata->on(pdata);
-		else {
-			pr_err("%s: ctrl_pdata->on() is not defined\n",
-								__func__);
-			rc = -EINVAL;
+		if (!pdata->panel_info.dynamic_switch_pending) {
+			rc = ctrl_pdata->on(pdata);
+			if (rc)
+				pr_err("%s: panel on failed!\n", __func__);
+		}
+		if (pdata->panel_info.type == MIPI_CMD_PANEL &&
+				pdata->panel_info.dynamic_switch_pending) {
+			dsi_ctrl_gpio_request(ctrl_pdata);
+			mdss_dsi_set_tear_on(ctrl_pdata);
 		}
 	} else {
+		msm_dsi_sw_reset();
 		if (dsi_intf.op_mode_config)
 			dsi_intf.op_mode_config(DSI_CMD_MODE, pdata);
-
-		if (ctrl_pdata->off)
-			ctrl_pdata->off(pdata);
-		else {
-			pr_err("%s: ctrl_pdata->off() is not defined\n",
-								__func__);
-			rc = -EINVAL;
+		if (pdata->panel_info.dynamic_switch_pending) {
+			pr_info("%s: switching to %s mode\n", __func__,
+			(pdata->panel_info.mipi.mode ? "video" : "command"));
+			if (pdata->panel_info.type == MIPI_CMD_PANEL) {
+				ctrl_pdata->switch_mode(pdata, DSI_VIDEO_MODE);
+				dsi_ctrl_gpio_free(ctrl_pdata);
+			} else if (pdata->panel_info.type == MIPI_VIDEO_PANEL) {
+				ctrl_pdata->switch_mode(pdata, DSI_CMD_MODE);
+				dsi_ctrl_gpio_request(ctrl_pdata);
+				mdss_dsi_set_tear_off(ctrl_pdata);
+				dsi_ctrl_gpio_free(ctrl_pdata);
+			}
 		}
+		if (!pdata->panel_info.dynamic_switch_pending)
+			rc = ctrl_pdata->off(pdata);
 		pdata->panel_info.panel_power_on = 0;
+		if (!pdata->panel_info.dynamic_switch_pending) {
+			if (pdata->panel_info.type == MIPI_CMD_PANEL)
+				dsi_ctrl_gpio_free(ctrl_pdata);
+			mdss_dsi_panel_reset(pdata, 0);
+		}
 	}
 	return rc;
 }
-
-int dsi_panel_ioctl_handler(struct mdss_panel_data *pdata, u32 cmd, void *arg)
-{
-	int rc = -EINVAL;
-	struct msmfb_reg_access reg_access;
-	int mode = DSI_MODE_BIT_LP;
-	int old_tx_mode;
-
-	if (copy_from_user(&reg_access, arg, sizeof(reg_access)))
-		return -EFAULT;
-
-	if (reg_access.use_hs_mode)
-		mode = DSI_MODE_BIT_HS;
-
-	old_tx_mode = dsi_get_tx_power_mode();
-	if (mode != old_tx_mode)
-		dsi_set_tx_power_mode(mode);
-
-	rc = mdss_dsi_panel_ioctl_handler(pdata, cmd, arg);
-	if (mode != old_tx_mode)
-		dsi_set_tx_power_mode(old_tx_mode);
-
-	return rc;
-}
-
 
 static int dsi_splash_on(struct mdss_panel_data *pdata)
 {
@@ -171,6 +197,9 @@ static int dsi_event_handler(struct mdss_panel_data *pdata,
 	case MDSS_EVENT_PANEL_CLK_CTRL:
 		rc = dsi_clk_ctrl(pdata, (int)arg);
 		break;
+	case MDSS_EVENT_DSI_DYNAMIC_SWITCH:
+		rc = dsi_update_pconfig(pdata, (int)(unsigned long) arg);
+		break;
 	default:
 		pr_debug("%s: unhandled event=%d\n", __func__, event);
 		break;
@@ -191,7 +220,8 @@ static int dsi_parse_gpio(struct platform_device *pdev,
 						__func__, __LINE__);
 
 	ctrl_pdata->disp_te_gpio = -1;
-	if (ctrl_pdata->panel_data.panel_info.mipi.mode == DSI_CMD_MODE) {
+	if (ctrl_pdata->panel_data.panel_info.mipi.mode == DSI_CMD_MODE ||
+		ctrl_pdata->panel_data.panel_info.mipi.dynamic_switch_enabled) {
 		ctrl_pdata->disp_te_gpio = of_get_named_gpio(np,
 						"qcom,platform-te-gpio", 0);
 		if (!gpio_is_valid(ctrl_pdata->disp_te_gpio))
@@ -256,8 +286,7 @@ void dsi_ctrl_gpio_free(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 	}
 }
 
-int dsi_parse_vreg(struct device *dev, struct dss_module_power *mp,
-						struct device_node *node)
+static int dsi_parse_vreg(struct device *dev, struct dss_module_power *mp)
 {
 	int i = 0, rc = 0;
 	u32 tmp = 0;
@@ -267,13 +296,10 @@ int dsi_parse_vreg(struct device *dev, struct dss_module_power *mp,
 	if (!dev || !mp) {
 		pr_err("%s: invalid input\n", __func__);
 		rc = -EINVAL;
-		goto error;
+		return rc;
 	}
 
-	if (node)
-		np = node;
-	else
-		np = dev->of_node;
+	np = dev->of_node;
 
 	mp->num_vreg = 0;
 	for_each_child_of_node(np, supply_node) {
@@ -466,7 +492,7 @@ int dsi_ctrl_config_init(struct platform_device *pdev,
 {
 	int rc;
 
-	rc = dsi_parse_vreg(&pdev->dev, &ctrl_pdata->power_data, NULL);
+	rc = dsi_parse_vreg(&pdev->dev, &ctrl_pdata->power_data);
 	if (rc) {
 		pr_err("%s:%d unable to get the regulator resources",
 			__func__, __LINE__);

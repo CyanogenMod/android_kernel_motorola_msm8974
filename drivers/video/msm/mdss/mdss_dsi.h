@@ -257,6 +257,7 @@ enum {
 
 #define DSI_EV_PLL_UNLOCKED		0x0001
 #define DSI_EV_MDP_FIFO_UNDERFLOW	0x0002
+#define DSI_EV_DSI_FIFO_EMPTY		0x0003
 #define DSI_EV_MDP_BUSY_RELEASE		0x80000000
 
 struct mdss_dsi_ctrl_pdata {
@@ -272,6 +273,7 @@ struct mdss_dsi_ctrl_pdata {
 			struct dss_module_power *mp, struct device_node *node);
 	int (*set_hbm)(struct mdss_dsi_ctrl_pdata *ctrl, int state);
 	int (*set_cabc)(struct mdss_dsi_ctrl_pdata *ctrl, int mode);
+	void (*switch_mode) (struct mdss_panel_data *pdata, int mode);
 	struct mdss_panel_data panel_data;
 	struct mdss_panel_config panel_config;
 	struct mdss_panel_esd_pdata panel_esd_data;
@@ -323,6 +325,9 @@ struct mdss_dsi_ctrl_pdata {
 	struct dsi_panel_cmds off_cmds;
 	struct dsi_panel_cmds cabc_ui_cmds;
 	struct dsi_panel_cmds cabc_mv_cmds;
+
+	struct dsi_panel_cmds video2cmd;
+	struct dsi_panel_cmds cmd2video;
 
 	struct dcs_cmd_list cmdlist;
 	struct completion dma_comp;
@@ -414,6 +419,11 @@ bool mdss_dsi_match_chosen_panel(struct device_node *np,
 				struct mdss_panel_config *pconfig);
 int mdss_dsi_panel_ioctl_handler(struct mdss_panel_data *pdata,
 					u32 cmd, void *arg);
+int mdss_panel_get_dst_fmt(u32 bpp, char mipi_mode, u32 pixel_packing,
+				char *dst_format);
+
+int mdss_dsi_register_recovery_handler(struct mdss_dsi_ctrl_pdata *ctrl,
+		struct mdss_panel_recovery *recovery);
 
 static inline bool mdss_dsi_broadcast_mode_enabled(void)
 {
