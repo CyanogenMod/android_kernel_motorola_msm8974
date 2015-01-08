@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -35,7 +35,6 @@ struct mdp3_buffer_queue {
 
 struct mdp3_session_data {
 	struct mutex lock;
-	struct mutex offlock;
 	int status;
 	struct mdp3_dma *dma;
 	struct mdss_panel_data *panel;
@@ -63,6 +62,11 @@ struct mdp3_session_data {
 
 	int vsync_enabled;
 	atomic_t vsync_countdown; /* Used to count down  */
+	bool in_splash_screen;
+
+	bool dma_active;
+	struct completion dma_completion;
+	int (*wait_for_dma_done)(struct mdp3_session_data *session);
 };
 
 int mdp3_ctrl_init(struct msm_fb_data_type *mfd);

@@ -17,7 +17,6 @@
 #include <linux/iopoll.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
-#include <linux/uaccess.h>
 
 #include "dsi_v2.h"
 
@@ -140,31 +139,6 @@ static int dsi_panel_handler(struct mdss_panel_data *pdata, int enable)
 	}
 	return rc;
 }
-
-int dsi_panel_ioctl_handler(struct mdss_panel_data *pdata, u32 cmd, void *arg)
-{
-	int rc = -EINVAL;
-	struct msmfb_reg_access reg_access;
-	int mode = DSI_MODE_BIT_LP;
-	int old_tx_mode;
-
-	if (copy_from_user(&reg_access, arg, sizeof(reg_access)))
-		return -EFAULT;
-
-	if (reg_access.use_hs_mode)
-		mode = DSI_MODE_BIT_HS;
-
-	old_tx_mode = dsi_get_tx_power_mode();
-	if (mode != old_tx_mode)
-		dsi_set_tx_power_mode(mode);
-
-	rc = mdss_dsi_panel_ioctl_handler(pdata, cmd, arg);
-	if (mode != old_tx_mode)
-		dsi_set_tx_power_mode(old_tx_mode);
-
-	return rc;
-}
-
 
 static int dsi_splash_on(struct mdss_panel_data *pdata)
 {
@@ -312,8 +286,7 @@ void dsi_ctrl_gpio_free(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 	}
 }
 
-int dsi_parse_vreg(struct device *dev, struct dss_module_power *mp,
-						struct device_node *node)
+static int dsi_parse_vreg(struct device *dev, struct dss_module_power *mp)
 {
 	int i = 0, rc = 0;
 	u32 tmp = 0;
@@ -326,10 +299,7 @@ int dsi_parse_vreg(struct device *dev, struct dss_module_power *mp,
 		return rc;
 	}
 
-	if (node)
-		np = node;
-	else
-		np = dev->of_node;
+	np = dev->of_node;
 
 	mp->num_vreg = 0;
 	for_each_child_of_node(np, supply_node) {
@@ -522,7 +492,7 @@ int dsi_ctrl_config_init(struct platform_device *pdev,
 {
 	int rc;
 
-	rc = dsi_parse_vreg(&pdev->dev, &ctrl_pdata->power_data, NULL);
+	rc = dsi_parse_vreg(&pdev->dev, &ctrl_pdata->power_data);
 	if (rc) {
 		pr_err("%s:%d unable to get the regulator resources",
 			__func__, __LINE__);

@@ -197,6 +197,7 @@ int mdp3_get_img(struct msmfb_data *img, struct mdp3_img_data *data,
 int mdp3_iommu_enable(int client);
 int mdp3_iommu_disable(int client);
 int mdp3_iommu_is_attached(int client);
+void mdp3_free(struct msm_fb_data_type *mfd);
 int mdp3_parse_dt_splash(struct msm_fb_data_type *mfd);
 void mdp3_release_splash_memory(struct msm_fb_data_type *mfd);
 int mdp3_create_sysfs_link(struct device *dev);
@@ -208,6 +209,8 @@ void mdp3_batfet_ctrl(int enable);
 int mdp3_misr_set(struct mdp_misr *misr_req);
 int mdp3_misr_get(struct mdp_misr *misr_resp);
 void mdp3_enable_regulator(int enable);
+void mdp3_check_dsi_ctrl_status(struct work_struct *work,
+				uint32_t interval);
 
 #define MDP3_REG_WRITE(addr, val) writel_relaxed(val, mdp3_res->mdp_base + addr)
 #define MDP3_REG_READ(addr) readl_relaxed(mdp3_res->mdp_base + addr)

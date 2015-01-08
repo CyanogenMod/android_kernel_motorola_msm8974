@@ -253,7 +253,6 @@ struct mdp3_dma {
 	u32 capability;
 	int in_use;
 	int available;
-	int vsync_cnt;
 
 	spinlock_t dma_lock;
 	spinlock_t histo_lock;
@@ -336,6 +335,7 @@ struct mdp3_video_intf_cfg {
 	int hsync_polarity;
 	int vsync_polarity;
 	int de_polarity;
+	int underflow_color;
 };
 
 struct mdp3_dsi_cmd_intf_cfg {
