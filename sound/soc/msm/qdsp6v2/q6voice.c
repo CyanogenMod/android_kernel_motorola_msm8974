@@ -5170,8 +5170,6 @@ int voc_start_voice_call(uint32_t session_id)
 		}
 
 		v->voc_state = VOC_RUN;
-	} else if (v->voc_state == VOC_RUN) {
-		pr_warn("%s: Warning: Start voice called in state VOC_RUN\n", __func__);
 	} else {
 		pr_err("%s: Error: Start voice called in state %d\n",
 			__func__, v->voc_state);

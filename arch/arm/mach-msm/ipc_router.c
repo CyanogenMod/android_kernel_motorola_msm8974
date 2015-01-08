@@ -2483,7 +2483,7 @@ int msm_ipc_router_send_to(struct msm_ipc_port *src,
 		return -ENODEV;
 	}
 
-	if (0 && src->check_send_permissions) {
+	if (src->check_send_permissions) {
 		ret = src->check_send_permissions(rport_ptr->sec_rule);
 		if (ret <= 0) {
 			up_read(&routing_table_lock_lha3);
