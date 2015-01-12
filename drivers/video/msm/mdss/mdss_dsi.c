@@ -1281,14 +1281,14 @@ int mdss_dsi_ioctl_handler(struct mdss_panel_data *pdata, u32 cmd, void *arg)
 	if (reg_access.use_hs_mode)
 		mode = DSI_MODE_BIT_HS;
 
-	old_tx_mode = mdss_get_tx_power_mode(pdata);
+	old_tx_mode = mdss_dsi_get_tx_power_mode(pdata);
 	if (mode != old_tx_mode)
-		mdss_set_tx_power_mode(mode, pdata);
+		mdss_dsi_set_tx_power_mode(mode, pdata);
 
 	rc = mdss_dsi_panel_ioctl_handler(pdata, cmd, arg);
 
 	if (mode != old_tx_mode)
-		mdss_set_tx_power_mode(old_tx_mode, pdata);
+		mdss_dsi_set_tx_power_mode(old_tx_mode, pdata);
 
 	return rc;
 }

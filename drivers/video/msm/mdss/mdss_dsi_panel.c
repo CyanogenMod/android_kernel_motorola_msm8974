@@ -693,7 +693,7 @@ static int mdss_dsi_panel_cont_splash_on(struct mdss_panel_data *pdata)
 
 #ifndef CONFIG_FB_MSM_MDSS_MDP3
 	if (pdata->panel_info.hs_cmds_post_init)
-		mdss_set_tx_power_mode(DSI_MODE_BIT_HS, pdata);
+		mdss_dsi_set_tx_power_mode(DSI_MODE_BIT_HS, pdata);
 #endif
 	pr_info("%s: Panel continuous splash finished\n", __func__);
 	return 0;
@@ -868,7 +868,7 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 
 #ifndef CONFIG_FB_MSM_MDSS_MDP3
 	if (pdata->panel_info.hs_cmds_post_init)
-		mdss_set_tx_power_mode(DSI_MODE_BIT_HS, pdata);
+		mdss_dsi_set_tx_power_mode(DSI_MODE_BIT_HS, pdata);
 #endif
 	/* Default CABC mode is UI while turning on display */
 	if (pdata->panel_info.dynamic_cabc_enabled)
