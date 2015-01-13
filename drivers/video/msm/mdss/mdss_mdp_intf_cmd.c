@@ -639,7 +639,7 @@ static int mdss_mdp_cmd_set_partial_roi(struct mdss_mdp_ctl *ctl)
 
 int mdss_mdp_cmd_panel_on_locked(struct mdss_mdp_ctl *ctl)
 {
-	struct mdss_mdp_cmd_ctx *ctx, *sctx = NULL;
+	struct mdss_mdp_cmd_ctx *ctx;
 	int rc = 0;
 
 	ctx = (struct mdss_mdp_cmd_ctx *) ctl->priv_data;
@@ -669,8 +669,7 @@ int mdss_mdp_cmd_panel_on_locked(struct mdss_mdp_ctl *ctl)
 
 int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 {
-	struct mdss_mdp_cmd_ctx *ctx;
-	unsigned long flags;
+	struct mdss_mdp_cmd_ctx *ctx, *sctx = NULL;
 	int rc;
 
 	ctx = (struct mdss_mdp_cmd_ctx *) ctl->priv_data;
@@ -701,7 +700,7 @@ int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 
 	mdss_mdp_irq_enable(MDSS_MDP_IRQ_PING_PONG_COMP, ctx->pp_num);
 	mdss_mdp_ctl_write(ctl, MDSS_MDP_REG_CTL_START, 1);
-	trace_mdp_cmd_kickoff(ctl->num, ctx->koff_cnt);
+	trace_mdp_cmd_kickoff(ctl->num, atomic_read(&ctx->koff_cnt));
 
 	mdss_mdp_ctl_perf_set_transaction_status(ctl,
 		PERF_SW_COMMIT_STATE, PERF_STATUS_DONE);
@@ -824,7 +823,7 @@ void mdss_mdp_cmd_dump_ctx(struct mdss_mdp_ctl *ctl)
 
 	MDSS_TIMEOUT_LOG("pp_num=%u\n", ctx->pp_num);
 	MDSS_TIMEOUT_LOG("panel_on=%d\n", ctx->panel_on);
-	MDSS_TIMEOUT_LOG("koff_cnt=%d\n", ctx->koff_cnt);
+	MDSS_TIMEOUT_LOG("koff_cnt=%d\n", atomic_read(&ctx->koff_cnt));
 	MDSS_TIMEOUT_LOG("clk_enabled=%d\n", ctx->clk_enabled);
 	MDSS_TIMEOUT_LOG("vsync_enabled=%d\n", ctx->vsync_enabled);
 	MDSS_TIMEOUT_LOG("rdptr_enabled=%d\n", ctx->rdptr_enabled);
