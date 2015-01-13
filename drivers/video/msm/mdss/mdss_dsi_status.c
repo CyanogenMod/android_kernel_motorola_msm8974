@@ -32,12 +32,12 @@
 #include "mdp3_ctrl.h"
 
 #define STATUS_CHECK_INTERVAL 8000
-#define STATUS_CHECK_INTERVAL_MIN 200
 
 struct dsi_status_data {
 	struct notifier_block fb_notifier;
 	struct delayed_work check_status;
 	struct msm_fb_data_type *mfd;
+	uint32_t check_interval;
 };
 struct dsi_status_data *pstatus_data;
 static uint32_t interval = STATUS_CHECK_INTERVAL;
@@ -141,7 +141,7 @@ static void check_dsi_ctrl_status(struct work_struct *work)
 	if ((pdsi_status->mfd->panel_power_on)) {
 		if (ret > 0) {
 			schedule_delayed_work(&pdsi_status->check_status,
-				msecs_to_jiffies(interval));
+				msecs_to_jiffies(pdsi_status->check_interval));
 		} else {
 			char *envp[2] = {"PANEL_ALIVE=0", NULL};
 			pdata->panel_info.panel_dead = true;
@@ -178,7 +178,7 @@ static int fb_event_callback(struct notifier_block *self,
 		switch (*blank) {
 		case FB_BLANK_UNBLANK:
 			schedule_delayed_work(&pdata->check_status,
-				msecs_to_jiffies(interval));
+				msecs_to_jiffies(pdata->check_interval));
 			break;
 		case FB_BLANK_POWERDOWN:
 		case FB_BLANK_HSYNC_SUSPEND:
@@ -192,26 +192,6 @@ static int fb_event_callback(struct notifier_block *self,
 		}
 	}
 	return 0;
-}
-
-static int param_set_interval(const char *val, struct kernel_param *kp)
-{
-	int ret = 0;
-	int int_val;
-
-	ret = kstrtos32(val, 0, &int_val);
-	if (ret)
-		return ret;
-	if (int_val < STATUS_CHECK_INTERVAL_MIN) {
-		pr_err("%s: Invalid value %d used, ignoring\n",
-						__func__, int_val);
-		ret = -EINVAL;
-	} else {
-		pr_info("%s: Set check interval to %d msecs\n",
-						__func__, int_val);
-		*((int *)kp->arg) = int_val;
-	}
-	return ret;
 }
 
 int __init mdss_dsi_status_init(void)
@@ -234,6 +214,7 @@ int __init mdss_dsi_status_init(void)
 		return -EPERM;
 	}
 
+	pstatus_data->check_interval = interval;
 	pr_info("%s: DSI status check interval:%d\n", __func__,	interval);
 
 	INIT_DELAYED_WORK(&pstatus_data->check_status, check_dsi_ctrl_status);
@@ -251,8 +232,7 @@ void __exit mdss_dsi_status_exit(void)
 	pr_debug("%s: DSI ctrl status work queue removed\n", __func__);
 }
 
-module_param_call(interval, param_set_interval, param_get_uint,
-							&interval, 0644);
+module_param(interval, uint, 0);
 MODULE_PARM_DESC(interval,
 		"Duration in milliseconds to send BTA command for checking"
 		"DSI status periodically");
