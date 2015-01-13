@@ -2223,8 +2223,6 @@ int mdss_dsi_panel_init(struct device_node *node,
 	ctrl_pdata->off = mdss_dsi_panel_off;
 	ctrl_pdata->panel_data.set_backlight = mdss_dsi_panel_bl_ctrl;
 	ctrl_pdata->cont_splash_on = mdss_dsi_panel_cont_splash_on;
-	ctrl_pdata->check_status_disabled =
-				!ctrl_pdata->panel_config.esd_enable;
 	ctrl_pdata->check_status = mdss_panel_check_status;
 	ctrl_pdata->set_hbm = mdss_dsi_panel_set_hbm;
 	ctrl_pdata->set_cabc = mdss_dsi_panel_set_cabc;
