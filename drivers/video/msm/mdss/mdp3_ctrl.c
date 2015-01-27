@@ -851,6 +851,8 @@ static int mdp3_ctrl_reset(struct msm_fb_data_type *mfd)
 	mdp3_session->first_commit = true;
 	mdp3_session->in_splash_screen = 0;
 
+	panel->panel_info.cont_splash_esd_rdy = true;
+
 reset_error:
 	mutex_unlock(&mdp3_session->lock);
 	return rc;
