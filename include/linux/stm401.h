@@ -151,7 +151,7 @@
 #define M_STEP_COUNTER	0x000080
 
 #define M_LIN_ACCEL		0x000100
-#define M_QUATERNION	0x000200
+#define M_QUAT_6AXIS	0x000200
 #define M_GRAVITY		0x000400
 #define M_DISP_ROTATE		0x000800
 #define M_DISP_BRIGHTNESS	0x001000
@@ -161,6 +161,7 @@
 #define M_UNCALIB_GYRO		0x008000
 #define M_UNCALIB_MAG		0x010000
 #define M_IR_OBJECT		0x020000
+#define M_QUAT_9AXIS		0x040000
 
 /* wake sensor status */
 #define M_DOCK			0x000001
@@ -168,6 +169,7 @@
 #define M_TOUCH			0x000004
 #define M_COVER			0x000008
 #define M_QUICKPEEK		0x000010
+#define M_LIFT			0x000020
 #define M_HUB_RESET		0x000080
 
 #define M_FLATUP		0x000100
@@ -230,7 +232,8 @@ enum STM401_data_types {
 	DT_TEMP,
 	DT_ALS,
 	DT_LIN_ACCEL,
-	DT_QUATERNION,
+	DT_QUAT_6AXIS,
+	DT_QUAT_9AXIS,
 	DT_GRAVITY,
 	DT_DISP_ROTATE,
 	DT_DISP_BRIGHT,
@@ -258,6 +261,7 @@ enum STM401_data_types {
 	DT_UNCALIB_MAG,
 	DT_CHOPCHOP,
 	DT_FLUSH,
+	DT_LIFT,
 };
 
 enum {
@@ -334,7 +338,9 @@ struct stm_response {
 #define IR_STATE                        0x1F
 
 #define MOTION_DUR                      0x20
+#define QUAT_6AXIS_UPDATE_RATE          0x21
 #define ZRMOTION_DUR                    0x22
+#define QUAT_9AXIS_UPDATE_RATE          0x23
 
 #define BYPASS_MODE                     0x24
 #define SLAVE_ADDRESS                   0x25
@@ -367,6 +373,7 @@ struct stm_response {
 #define TEMPERATURE_DATA                0x41
 
 #define GYRO_X                          0x43
+#define QUATERNION_DATA                 0x44
 #define UNCALIB_GYRO_X			0x45
 #define UNCALIB_MAG_X			0x46
 
@@ -381,6 +388,7 @@ struct stm_response {
 #define NFC                             0x4D
 #define SIM                             0x4E
 #define CHOPCHOP                        0x4F
+#define LIFT                            0x51
 
 #define ALGO_CFG_ACCUM_MODALITY         0x5D
 #define ALGO_REQ_ACCUM_MODALITY         0x60
@@ -413,8 +421,6 @@ struct stm_response {
 
 #define RESET                           0x7F
 /* STM401 memory map end */
-
-#define READ_CMDBUFF_SIZE 512
 
 #define LIGHTING_TABLE_SIZE 32
 
@@ -450,8 +456,6 @@ struct stm_response {
 #define AOD_QP_ENABLED_VOTE_USER		0x02
 #define AOD_QP_ENABLED_VOTE_MASK		0x03
 
-#define STM401_MAX_GENERIC_DATA		512
-
 #define ESR_SIZE			128
 
 #define STM401_RESET_DELAY		50
@@ -459,6 +463,10 @@ struct stm_response {
 #define I2C_RESPONSE_LENGTH		8
 
 #define STM401_MAXDATA_LENGTH		256
+#define STM401_HEADER_LENGTH		1
+#define STM401_FOOTER_LENGTH		1
+#define STM401_MAX_PACKET_LENGTH	\
+	(STM401_HEADER_LENGTH + STM401_MAXDATA_LENGTH + STM401_FOOTER_LENGTH)
 
 #define STM401_IR_GESTURE_CNT      8
 #define STM401_IR_SZ_GESTURE       4
@@ -497,6 +505,14 @@ struct stm_response {
 #define ORIENT_X	6
 #define ORIENT_Y	8
 #define ORIENT_Z	10
+#define QUAT_6AXIS_A	0
+#define QUAT_6AXIS_B	2
+#define QUAT_6AXIS_C	4
+#define QUAT_6AXIS_W	6
+#define QUAT_9AXIS_A	8
+#define QUAT_9AXIS_B	10
+#define QUAT_9AXIS_C	12
+#define QUAT_9AXIS_W	14
 #define GYRO_RD_X	0
 #define GYRO_RD_Y	2
 #define GYRO_RD_Z	4
@@ -520,11 +536,14 @@ struct stm_response {
 #define SIM_DATA	0
 #define STEP_DETECT	0
 #define CHOPCHOP_DATA   0
+#define LIFT_DISTANCE	0
+#define LIFT_ROTATION	4
+#define LIFT_GRAV_DIFF	8
 
 /* The following macros are intended to be called with the stm IRQ handlers */
 /* only and refer to local variables in those functions. */
-#define STM16_TO_HOST(x) ((short) be16_to_cpu(*((u16 *) (stm401_readbuff+(x)))))
-#define STM32_TO_HOST(x) ((short) be32_to_cpu(*((u32 *) (stm401_readbuff+(x)))))
+#define STM16_TO_HOST(x, buf) ((short) be16_to_cpu(*((u16 *) (buf+(x)))))
+#define STM32_TO_HOST(x, buf) ((short) be32_to_cpu(*((u32 *) (buf+(x)))))
 
 struct stm401_quickpeek_message {
 	u8 message;
@@ -592,6 +611,7 @@ struct stm401_data {
 
 	dev_t stm401_dev_num;
 	struct class *stm401_class;
+	struct device *stm401_class_dev;
 	struct cdev as_cdev;
 	struct cdev ms_cdev;
 
@@ -652,6 +672,14 @@ struct stm401_algo_requst_t {
 	char data[ALGO_RQST_DATA_SIZE];
 };
 
+int64_t stm401_timestamp_ns(void);
+int stm401_set_rv_6axis_update_rate(
+	struct stm401_data *ps_stm401,
+	const uint8_t newDelay);
+int stm401_set_rv_9axis_update_rate(
+	struct stm401_data *ps_stm401,
+	const uint8_t newDelay);
+
 irqreturn_t stm401_isr(int irq, void *dev);
 void stm401_irq_work_func(struct work_struct *work);
 
@@ -675,14 +703,22 @@ int stm401_ms_data_buffer_write(struct stm401_data *ps_stm401,
 int stm401_ms_data_buffer_read(struct stm401_data *ps_stm401,
 	struct stm401_moto_sensor_data *buff);
 
-int stm401_i2c_write_read_no_reset(struct stm401_data *ps_stm401,
-	u8 *buf, int writelen, int readlen);
+int stm401_i2c_write_read_no_reset(
+	struct stm401_data *ps_stm401,
+	u8 *writebuf,
+	u8 *readbuf,
+	int writelen,
+	int readlen);
 int stm401_i2c_read_no_reset(struct stm401_data *ps_stm401,
 	u8 *buf, int len);
 int stm401_i2c_write_no_reset(struct stm401_data *ps_stm401,
 	u8 *buf, int len);
-int stm401_i2c_write_read(struct stm401_data *ps_stm401, u8 *buf,
-	int writelen, int readlen);
+int stm401_i2c_write_read(
+	struct stm401_data *ps_stm401,
+	u8 *writebuf,
+	u8 *readbuff,
+	int writelen,
+	int readlen);
 int stm401_i2c_read(struct stm401_data *ps_stm401, u8 *buf, int len);
 int stm401_i2c_write(struct stm401_data *ps_stm401, u8 *buf, int len);
 int stm401_enable(struct stm401_data *ps_stm401);
@@ -699,7 +735,7 @@ int stm401_irq_wake_work_func_display_locked(struct stm401_data *ps_stm401,
 unsigned short stm401_get_interrupt_status(struct stm401_data *ps_stm401,
 	unsigned char reg, int *err);
 void stm401_quickpeek_work_func(struct work_struct *work);
-void stm401_quickpeek_reset_locked(struct stm401_data *ps_stm401);
+void stm401_quickpeek_reset_locked(struct stm401_data *ps_stm401, bool do_ack);
 int stm401_quickpeek_disable_when_idle(struct stm401_data *ps_stm401);
 void stm401_vote_aod_enabled_locked(struct stm401_data *ps_stm401, int voter,
 	bool enable);
@@ -723,6 +759,8 @@ extern struct stm401_data *stm401_misc_data;
 extern unsigned short stm401_g_acc_delay;
 extern unsigned short stm401_g_mag_delay;
 extern unsigned short stm401_g_gyro_delay;
+extern uint8_t stm401_g_rv_6axis_delay;
+extern uint8_t stm401_g_rv_9axis_delay;
 extern unsigned short stm401_g_baro_delay;
 extern unsigned short stm401_g_ir_gesture_delay;
 extern unsigned short stm401_g_ir_raw_delay;
@@ -737,9 +775,6 @@ extern unsigned short stm401_g_control_reg_restore;
 extern unsigned char stm401_g_ir_config_reg[STM401_IR_CONFIG_REG_SIZE];
 extern bool stm401_g_ir_config_reg_restore;
 extern bool stm401_g_booted;
-
-extern unsigned char stm401_cmdbuff[];
-extern unsigned char stm401_readbuff[];
 
 extern unsigned short stm401_i2c_retry_delay;
 

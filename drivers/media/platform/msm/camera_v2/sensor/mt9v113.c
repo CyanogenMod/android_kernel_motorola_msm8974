@@ -25,8 +25,18 @@
 #define MT9V113_COLOR_PIPE_CONTROL_REGISTER 0x3210
 #define MT9V113_KERNEL_CONFIG_REGISTER 0x33F4
 #define MT9V113_EXPOSURE_TARGET_REGISTER 0xA24F
+#define MT9V113_AWB_EDGE_THERSOLD_REGISTER 0x2361
+#define MT9V113_AE_GATE_REGISTER 0xA207
+#define MT9V113_AE_PREVIEW_MODE_REGISTER 0xA11D
+#define MT9V113_AE_CAPTURE_MODE_REGISTER 0xA129
+#define MT9V113_COMMAND_REGISTER 0xA103
+#define MT9V113_REFRESH_COMMAND 0x0005
+#define MT9V113_REFRESH_MODE_COMMAND 0x0006
 #define MT9V113_MCU_VARIABLE_ADDRESS 0x098C
 #define MT9V113_MCU_VARIABLE_DATA0 0x0990
+
+#define MAX_ITERATION 10
+#define POLL_DELAY_US 10000
 
 #define MT9V113_SET_BIT_3 (1 << 3)
 #define MT9V113_SET_BIT_4 (1 << 4)
@@ -117,20 +127,6 @@ static struct msm_sensor_power_setting MT9V113_power_setting[] = {
 	}
 };
 
-static struct msm_camera_i2c_reg_conf mt9v113_refresh_settings[] = {
-	/* REFRESH */
-	{0x098C, 0xA103,}, /* MCU_ADDRESS */
-	{0x0990, 0x0006,}, /* MCU_DATA_0 */
-	{0x098C, 0xA103,},
-	{0x0990, 0xFFFF, MSM_CAMERA_I2C_UNSET_WORD_MASK,
-		MSM_CAMERA_I2C_CMD_POLL},
-	{0x098C, 0xA103,}, /* MCU_ADDRESS */
-	{0x0990, 0x0005,}, /* MCU_DATA_0 */
-	{0x098C, 0xA103,},
-	{0x0990, 0xFFFF, MSM_CAMERA_I2C_UNSET_WORD_MASK,
-		MSM_CAMERA_I2C_CMD_POLL},
-};
-
 static struct msm_camera_i2c_reg_conf mt9v113_start_settings[] = {
 	{0x3400, 0x7a24,},
 };
@@ -163,6 +159,7 @@ struct msm_camera_i2c_reg_conf mt9v113_init_tbl[] = {
 	{0x001A, 0x0008, MSM_CAMERA_I2C_SET_WORD_MASK,},
 	{0x3400, 0x0200, MSM_CAMERA_I2C_SET_WORD_MASK,},
 	{0x321C, 0x0080, MSM_CAMERA_I2C_UNSET_WORD_MASK,},
+	{0x3412, 0x0703,}, /* MIPI CONTROL */
 	/* REDUCE_CURRENT */
 	{0x098C, 0x02F0,}, /* MCU_ADDRESS */
 	{0x0990, 0x0000,}, /* MCU_DATA_0  */
@@ -437,7 +434,7 @@ struct msm_camera_i2c_reg_conf mt9v113_init_tbl[] = {
 	{0x098C, 0xA349,}, /* MCU_ADDRESS [AWB_JUMP_DIVISOR]        */
 	{0x0990, 0x0002,}, /* MCU_DATA_0                            */
 	{0x098C, 0xA34A,}, /* MCU_ADDRESS [AWB_GAIN_MIN]            */
-	{0x0990, 0x0090,}, /* MCU_DATA_0                            */
+	{0x0990, 0x0076,}, /* MCU_DATA_0                            */
 	{0x098C, 0xA34B,}, /* MCU_ADDRESS [AWB_GAIN_MAX]            */
 	{0x0990, 0x00FF,}, /* MCU_DATA_0                            */
 	{0x098C, 0xA34C,}, /* MCU_ADDRESS [AWB_GAINMIN_B]           */
@@ -465,7 +462,7 @@ struct msm_camera_i2c_reg_conf mt9v113_init_tbl[] = {
 	{0x098C, 0xA363,}, /* MCU_ADDRESS [AWB_TG_MIN0]             */
 	{0x0990, 0x00D2,}, /* MCU_DATA_0                            */
 	{0x098C, 0xA364,}, /* MCU_ADDRESS [AWB_TG_MAX0]             */
-	{0x0990, 0x00F6,}, /* MCU_DATA_0                            */
+	{0x0990, 0x00F4,}, /* MCU_DATA_0                            */
 	{0x098C, 0xA302,}, /* MCU_ADDRESS [AWB_WINDOW_POS]          */
 	{0x0990, 0x0000,}, /* MCU_DATA_0                            */
 	{0x098C, 0xA303,}, /* MCU_ADDRESS [AWB_WINDOW_SIZE]         */
@@ -484,15 +481,17 @@ struct msm_camera_i2c_reg_conf mt9v113_init_tbl[] = {
 	{0x098C, 0xA203,}, /* MCU_ADDRESS [AE_WINDOW_SIZE]*/
 	{0x0990, 0x0099,}, /* MCU_DATA_0*/
 	{0x098C, 0xA207,}, /* MCU_ADDRESS [AE_GATE]*/
-	{0x0990, 0x0006,}, /* MCU_DATA_0*/
+	{0x0990, 0x0004,}, /* MCU_DATA_0*/
 	{0x098C, 0xA208,}, /* MCU_ADDRESS [AE_SKIP_FRAMES] */
 	{0x0990, 0x0001,}, /* MCU_DATA_0 */
 	{0x098C, 0xA20E,}, /* MCU_ADDRESS [AE_MAX_VIRTGAIN] */
 	{0x0990, 0x0082,}, /* MCU_DATA_0 */
 	{0x098C, 0x2212,}, /* MCU_ADDRESS [AE_MAX_DGAIN_AE1] */
-	{0x0990, 0x0140,}, /* MCU_DATA_0 */
+	{0x0990, 0x0118,}, /* MCU_DATA_0 */
+	{0x098C, 0xA20C,}, /* MCU_ADDRESS [AE_MAX_INDEX] */
+	{0x0990, 0x000F,}, /* MCU_DATA_0 */
 	{0x098C, 0xA215,}, /* MCU_ADDRESS [AE_INDEX_TH23] */
-	{0x0990, 0x0005,}, /* MCU_DATA_0 */
+	{0x0990, 0x0008,}, /* MCU_DATA_0 */
 	{0x098C, 0xA216,}, /* MCU_ADDRESS [AE_MAXGAIN23] */
 	{0x0990, 0x0082,}, /* MCU_DATA_0 */
 	{0x098C, 0xA24F,}, /* MCU_ADDRESS [AE_BASETARGET]*/
@@ -505,7 +504,7 @@ struct msm_camera_i2c_reg_conf mt9v113_init_tbl[] = {
 	{0x098C, 0x275F,}, /* MCU_ADDRESS [MODESETTINGS_BRIGHT_COLOR_KILL]*/
 	{0x0990, 0x0594,}, /* MCU_DATA_0 */
 	{0x098C, 0x2761,}, /* MCU_ADDRESS [MODESETTINGS_DARK_COLOR_KILL]*/
-	{0x0990, 0x00AA,}, /* MCU_DATA_0 */
+	{0x0990, 0x00A2,}, /* MCU_DATA_0 */
 	{0x098C, 0xAB1F,}, /* MCU_ADDRESS [HG_LLMODE]*/
 	{0x0990, 0x00C7,}, /* MCU_DATA_0*/
 	{0x098C, 0xAB31,}, /* MCU_ADDRESS [HG_NR_STOP_G]*/
@@ -515,17 +514,17 @@ struct msm_camera_i2c_reg_conf mt9v113_init_tbl[] = {
 	{0x098C, 0xAB21,}, /* MCU_ADDRESS [HG_LL_INTERPTHRESH1]*/
 	{0x0990, 0x0016,}, /* MCU_DATA_0*/
 	{0x098C, 0xAB22,}, /* MCU_ADDRESS [HG_LL_APCORR1]*/
-	{0x0990, 0x0002,}, /* MCU_DATA_0*/
+	{0x0990, 0x0004,}, /* MCU_DATA_0*/
 	{0x098C, 0xAB23,}, /* MCU_ADDRESS [HG_LL_APTHRESH1]*/
 	{0x0990, 0x0005,}, /* MCU_DATA_0*/
 	{0x098C, 0xAB24,}, /* MCU_ADDRESS [HG_LL_SAT2]*/
-	{0x0990, 0x0005,}, /* MCU_DATA_0*/
+	{0x0990, 0x0025,}, /* MCU_DATA_0*/
 	{0x098C, 0xAB25,}, /* MCU_ADDRESS [HG_LL_INTERPTHRESH2]*/
 	{0x0990, 0x0028,}, /* MCU_DATA_0*/
 	{0x098C, 0xAB26,}, /* MCU_ADDRESS [HG_LL_APCORR2]*/
 	{0x0990, 0x0002,}, /* MCU_DATA_0*/
 	{0x098C, 0x2B28,}, /* MCU_ADDRESS [HG_LL_BRIGHTNESSSTART]*/
-	{0x0990, 0x0898,}, /* MCU_DATA_0*/
+	{0x0990, 0x1770,}, /* MCU_DATA_0*/
 	{0x098C, 0x2B2A,}, /* MCU_ADDRESS [HG_LL_BRIGHTNESSSTOP]*/
 	{0x0990, 0x16A8,}, /* MCU_DATA_0*/
 	{0x098C, 0xAB34,}, /* MCU_ADDRESS [HG_NR_GAINSTART]*/
@@ -620,6 +619,15 @@ struct msm_camera_i2c_reg_conf mt9v113_init_tbl[] = {
 	{0x098C, 0xA75E,}, /* MCU_ADDRESS [MODE_Y_RGB_OFFSET_B]*/
 	{0x0990, 0x0002,}, /* MCU_DATA_0*/
 	{0x3400, 0x7a26,},
+	/* Additional Tuning parameters for Motorola request */
+	{0x098C, 0xAB04,}, /* MCU_ADDRESS [HG_MAX_DLEVEL] */
+	{0x0990, 0x0050,}, /* MCU_DATA_0                       */
+	{0x098C, 0xAB06,}, /* MCU_ADDRESS [HG_PERCENT] */
+	{0x0990, 0x0003,}, /* MCU_DATA_0                       */
+	{0x098C, 0xAB35,}, /* MCU_ADDRESS [HG_NR_GAINSTOP] */
+	{0x0990, 0x00F0,}, /* MCU_DATA_0                       */
+	{0x098C, 0xA207,}, /* MCU_ADDRESS [AE_GATE]*/
+	{0x0990, 0x0012,}, /* MCU_DATA_0*/
 };
 
 static struct v4l2_subdev_info MT9V113_subdev_info[] = {
@@ -846,10 +854,110 @@ static int32_t mt9v113_set_lens_shading(struct msm_sensor_ctrl_t *s_ctrl,
 	return rc;
 }
 
+static int32_t mt9v113_set_refresh(struct msm_sensor_ctrl_t *s_ctrl,
+		int16_t command)
+{
+	int32_t rc, i;
+	uint16_t data;
+	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+			s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_ADDRESS,
+			MT9V113_COMMAND_REGISTER,
+			MSM_CAMERA_I2C_WORD_DATA);
+	if (rc < 0)
+		return rc;
+
+	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+			s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_DATA0,
+			command,
+			MSM_CAMERA_I2C_WORD_DATA);
+	if (rc < 0)
+		return rc;
+
+	for (i = 0; i <= MAX_ITERATION; i++) {
+		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+			s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_ADDRESS,
+			MT9V113_COMMAND_REGISTER,
+			MSM_CAMERA_I2C_WORD_DATA);
+		if (rc < 0)
+			return rc;
+		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_read(
+			s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_DATA0,
+			&data,
+			MSM_CAMERA_I2C_WORD_DATA);
+		if (rc < 0)
+			return rc;
+		if (data)
+			pr_info("%s read data %d\n",
+				__func__, data);
+		else
+			break;
+
+		usleep(POLL_DELAY_US);
+	}
+	if (i > MAX_ITERATION)
+		pr_err("%s Refresh timeout %x\n",
+			__func__, command);
+
+	return rc;
+}
+
+
 static int32_t mt9v113_set_target_exposure(struct msm_sensor_ctrl_t *s_ctrl,
 		int8_t target_exposure)
 {
 	int32_t rc;
+	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+			s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_ADDRESS,
+			MT9V113_AE_PREVIEW_MODE_REGISTER,
+			MSM_CAMERA_I2C_WORD_DATA);
+	if (rc < 0) {
+		pr_err("%s: Write MT9V113_AE_PREVIEW_MODE_REGISTER failed\n",
+				__func__);
+		return rc;
+	}
+	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+		s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_DATA0,
+			0x0002,
+			MSM_CAMERA_I2C_WORD_DATA);
+	if (rc < 0) {
+		pr_err("%s: Write AE PREVIEW MODE Value failed\n",
+				__func__);
+		return rc;
+	}
+	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+		s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_ADDRESS,
+			MT9V113_AE_CAPTURE_MODE_REGISTER,
+			MSM_CAMERA_I2C_WORD_DATA);
+	if (rc < 0) {
+		pr_err("%s: Write MT9V113_AE_CAPTURE_MODE_REGISTER failed\n",
+				__func__);
+		return rc;
+	}
+	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+		s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_DATA0,
+			0x0002,
+			MSM_CAMERA_I2C_WORD_DATA);
+	if (rc < 0) {
+		pr_err("%s: Write AE CAPTURE MODE Value failed\n",
+				__func__);
+		return rc;
+	}
+	/* Refresh settings */
+	rc = mt9v113_set_refresh(s_ctrl, MT9V113_REFRESH_COMMAND);
+	if (rc < 0) {
+		pr_err("%s: Refresh Command failed\n",
+				__func__);
+		return rc;
+	}
+
 	/* AE_BASETARGET */
 	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
 			s_ctrl->sensor_i2c_client,
@@ -874,7 +982,50 @@ static int32_t mt9v113_set_target_exposure(struct msm_sensor_ctrl_t *s_ctrl,
 				__func__);
 		return rc;
 	}
+	/* Cahnge AE GATE value */
+	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+		s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_ADDRESS,
+			MT9V113_AE_GATE_REGISTER,
+			MSM_CAMERA_I2C_WORD_DATA);
+	if (rc < 0) {
+		pr_err("%s: Write AE_GATE register failed\n",
+				__func__);
+		return rc;
+	}
+	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+		s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_DATA0,
+			0x0004,
+			MSM_CAMERA_I2C_WORD_DATA);
+	if (rc < 0) {
+		pr_err("%s: Write AE GATE Value failed\n",
+				__func__);
+		return rc;
+	}
+	/* Wait for 200 ms to take effect*/
+	usleep(200000);
 
+	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+		s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_ADDRESS,
+			MT9V113_AE_GATE_REGISTER,
+			MSM_CAMERA_I2C_WORD_DATA);
+	if (rc < 0) {
+		pr_err("%s: Write AE_GATE register failed\n",
+				__func__);
+		return rc;
+	}
+	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+		s_ctrl->sensor_i2c_client,
+			MT9V113_MCU_VARIABLE_DATA0,
+			0x0012,
+			MSM_CAMERA_I2C_WORD_DATA);
+	if (rc < 0) {
+		pr_err("%s: Write AE GATE Value failed\n",
+				__func__);
+		return rc;
+	}
 	return rc;
 }
 
@@ -896,30 +1047,31 @@ static struct msm_camera_i2c_reg_conf mt9v113_15_30_fps_settings[] = {
 	{0x0990, 0x0005,}, /*MCU_DATA_0*/
 };
 
-static struct msm_camera_i2c_reg_conf mt9v113_5_30_fps_settings[] = {
+static struct msm_camera_i2c_reg_conf mt9v113_8_30_fps_settings[] = {
 	{0x098C, 0x271F,}, /*MCU_ADDRESS [MODE_SENSOR_FRAME_LENGTH_A]*/
 	{0x0990, 0x021F,}, /*MCU_DATA_0*/
 	{0x098C, 0xA20C,}, /*MCU_ADDRESS [AE_MAX_INDEX]*/
-	{0x0990, 0x0018,}, /*MCU_DATA_0*/
+	{0x0990, 0x000F,}, /*MCU_DATA_0*/
 	{0x098C, 0xA215,}, /*MCU_ADDRESS [AE_INDEX_TH23]*/
-	{0x0990, 0x0005,}, /*MCU_DATA_0*/
+	{0x0990, 0x0008,}, /*MCU_DATA_0*/
 };
 
 static int32_t mt9v113_set_frame_rate_range(struct msm_sensor_ctrl_t *s_ctrl,
 	struct var_fps_range_t *fps_range)
 {
 	int32_t rc = 0;
-	static bool fps_5_30 = true;
-	if (fps_range->min_fps == 5 && fps_range->max_fps == 30) {
-		if (fps_5_30)
+	static bool fps_8_30 = true;
+	if (fps_range->min_fps == 8 && fps_range->max_fps == 30) {
+		if (fps_8_30)
 			return rc;
+
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
 			i2c_write_conf_tbl(
 					s_ctrl->sensor_i2c_client,
-					mt9v113_5_30_fps_settings,
-					ARRAY_SIZE(mt9v113_5_30_fps_settings),
+					mt9v113_8_30_fps_settings,
+					ARRAY_SIZE(mt9v113_8_30_fps_settings),
 					MSM_CAMERA_I2C_WORD_DATA);
-		fps_5_30 = true;
+		fps_8_30 = true;
 	} else if (fps_range->min_fps == 15 && fps_range->max_fps == 30) {
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
 			i2c_write_conf_tbl(
@@ -927,7 +1079,7 @@ static int32_t mt9v113_set_frame_rate_range(struct msm_sensor_ctrl_t *s_ctrl,
 					mt9v113_15_30_fps_settings,
 					ARRAY_SIZE(mt9v113_15_30_fps_settings),
 					MSM_CAMERA_I2C_WORD_DATA);
-		fps_5_30 = false;
+		fps_8_30 = false;
 	} else if (fps_range->min_fps == 15 && fps_range->max_fps == 15) {
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
 			i2c_write_conf_tbl(
@@ -935,7 +1087,7 @@ static int32_t mt9v113_set_frame_rate_range(struct msm_sensor_ctrl_t *s_ctrl,
 					mt9v113_15_15_fps_settings,
 					ARRAY_SIZE(mt9v113_15_15_fps_settings),
 					MSM_CAMERA_I2C_WORD_DATA);
-		fps_5_30 = false;
+		fps_8_30 = false;
 	} else {
 		pr_err("%s: Invalid frame rate range (%u, %u)\n", __func__,
 				fps_range->min_fps, fps_range->max_fps);
@@ -948,11 +1100,27 @@ static int32_t mt9v113_set_frame_rate_range(struct msm_sensor_ctrl_t *s_ctrl,
 		return rc;
 	}
 
-	rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write_conf_tbl(
-		s_ctrl->sensor_i2c_client, mt9v113_refresh_settings,
-		ARRAY_SIZE(mt9v113_refresh_settings),
-		MSM_CAMERA_I2C_WORD_DATA);
+	/* Refresh settings */
+	rc = mt9v113_set_refresh(s_ctrl, MT9V113_REFRESH_COMMAND);
+	if (rc < 0) {
+		pr_err("%s: Refresh command failed\n",
+				__func__);
+		return rc;
+	}
 	return rc;
+}
+
+static bool mt9v113_sensor_factory(void)
+{
+	struct device_node *np = of_find_node_by_path("/chosen");
+	bool factory = false;
+
+	if (np)
+		factory = of_property_read_bool(np, "mmi,factory-cable");
+
+	of_node_put(np);
+
+	return factory;
 }
 
 int32_t MT9V113_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
@@ -992,11 +1160,47 @@ int32_t MT9V113_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 			ARRAY_SIZE(mt9v113_init_tbl),
 			MSM_CAMERA_I2C_WORD_DATA);
 
-		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
-			i2c_write_conf_tbl(
-			s_ctrl->sensor_i2c_client, mt9v113_refresh_settings,
-			ARRAY_SIZE(mt9v113_refresh_settings),
-			MSM_CAMERA_I2C_WORD_DATA);
+		/* Refresh settings */
+		rc = mt9v113_set_refresh(s_ctrl, MT9V113_REFRESH_MODE_COMMAND);
+		if (rc < 0) {
+			pr_err("%s: Refresh Mode command failed\n",
+					__func__);
+			break;
+		}
+		rc = mt9v113_set_refresh(s_ctrl, MT9V113_REFRESH_COMMAND);
+		if (rc < 0) {
+			pr_err("%s: Refresh command failed\n",
+					__func__);
+			break;
+		}
+
+		if (mt9v113_sensor_factory()) {
+			pr_err("%s:Reset AWB edge TH factory test only\n",
+				__func__);
+			rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+				s_ctrl->sensor_i2c_client,
+				MT9V113_MCU_VARIABLE_ADDRESS,
+				MT9V113_AWB_EDGE_THERSOLD_REGISTER,
+				MSM_CAMERA_I2C_WORD_DATA);
+
+			if (rc < 0) {
+				pr_err("%s: Write AWB thersold register failed\n",
+					__func__);
+				break;
+			}
+
+			rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+				s_ctrl->sensor_i2c_client,
+				MT9V113_MCU_VARIABLE_DATA0,
+				0x0000,
+				MSM_CAMERA_I2C_WORD_DATA);
+
+			if (rc < 0) {
+				pr_err("%s: Write AWB thersold Value failed\n",
+					__func__);
+				break;
+			}
+		}
 		break;
 	case CFG_SET_RESOLUTION:
 		break;
@@ -1314,10 +1518,10 @@ static int32_t mt9v113_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	int32_t rc = 0;
 	pr_info("%s called\n", __func__);
-	msm_sensor_power_up(s_ctrl);
-	rc = msm_sensor_match_id(s_ctrl);
+	rc = msm_sensor_power_up(s_ctrl);
 	if (rc < 0)
-		pr_err("%s:%d match id failed rc %d\n", __func__, __LINE__, rc);
+		pr_err("%s:%d sensor power up/match id failed rc %d\n",
+			__func__, __LINE__, rc);
 
 	return rc;
 }

@@ -43,7 +43,7 @@
 
 #include <linux/stml0xx.h>
 
-void stml0xx_reset(struct stml0xx_platform_data *pdata, unsigned char *cmdbuff)
+void stml0xx_reset(struct stml0xx_platform_data *pdata)
 {
 	dev_err(&stml0xx_misc_data->spi->dev, "stml0xx_reset");
 	stml0xx_g_booted = 0;
@@ -60,17 +60,12 @@ void stml0xx_initialize_work_func(struct work_struct *work)
 		struct stml0xx_data, initialize_work);
 
 	struct stml0xx_platform_data *pdata;
-	unsigned char *rst_cmdbuff;
 	unsigned char buf[SPI_MSG_SIZE];
 	unsigned int i;
 	int err;
 	int ret_err = 0;
 
 	pdata = ps_stml0xx->pdata;
-	rst_cmdbuff = ps_stml0xx->spi_tx_buf;
-
-	if (rst_cmdbuff == NULL)
-		return;
 
 	wake_lock(&ps_stml0xx->reset_wakelock);
 
@@ -79,6 +74,19 @@ void stml0xx_initialize_work_func(struct work_struct *work)
 	stml0xx_wake(ps_stml0xx);
 
 	stml0xx_detect_lowpower_mode();
+
+	if ((pdata->accel_orientation_1 > 0) ||
+				(pdata->accel_orientation_2 > 0)) {
+		buf[0] = pdata->accel_orientation_1 & 0xff;
+		buf[1] = pdata->accel_orientation_2 & 0xff;
+		err = stml0xx_spi_send_write_reg_reset(ACCEL_ORIENTATION, buf,
+				2, RESET_NOT_ALLOWED);
+		if (err < 0) {
+			dev_err(&ps_stml0xx->spi->dev,
+				"Unable to write accel orientation value");
+			ret_err = err;
+		}
+	}
 
 	buf[0] = stml0xx_g_acc_delay;
 	err = stml0xx_spi_send_write_reg_reset(ACCEL_UPDATE_RATE, buf,
@@ -188,7 +196,7 @@ void stml0xx_initialize_work_func(struct work_struct *work)
 			1, RESET_NOT_ALLOWED);
 		if (err < 0) {
 			dev_err(&ps_stml0xx->spi->dev,
-				"Unable to wrie headset hw version");
+				"Unable to write headset hw version");
 			ret_err = err;
 		}
 	}
@@ -198,15 +206,21 @@ void stml0xx_initialize_work_func(struct work_struct *work)
 			1, RESET_NOT_ALLOWED);
 		if (err < 0) {
 			dev_err(&ps_stml0xx->spi->dev,
-				"Unable to wrie headset detect enable");
+				"Unable to write headset detect enable");
 			ret_err = err;
 		}
 	}
 
-	err = stml0xx_led_set_reset(&ps_stml0xx->led_cdev,
-			RESET_NOT_ALLOWED);
-	if (err < 0)
-		ret_err =  err;
+#ifdef CONFIG_SENSORHUB_DEBUG_LOGGING
+	buf[0] = SH_LOG_DEBUG;
+	err = stml0xx_spi_send_write_reg_reset(SH_LOG_LEVEL_REG, buf,
+		1, RESET_NOT_ALLOWED);
+	if (err < 0) {
+		dev_err(&ps_stml0xx->spi->dev,
+			"Unable to write sh log level");
+		ret_err = err;
+	}
+#endif
 
 	/* sending reset to slpc hal */
 	stml0xx_ms_data_buffer_write(ps_stml0xx, DT_RESET, NULL, 0);

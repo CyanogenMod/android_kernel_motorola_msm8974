@@ -18,7 +18,6 @@
 
 #include <linux/cdev.h>
 #include <linux/delay.h>
-#include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/export.h>
@@ -75,13 +74,13 @@ unsigned char stml0xx_g_mag_cal[STML0XX_MAG_CAL_SIZE];
 unsigned short stml0xx_g_control_reg_restore;
 bool stml0xx_g_booted;
 
-/* Store error message */
-unsigned char stat_string[ESR_SIZE + 1];
+/* Store log message */
+unsigned char stat_string[LOG_MSG_SIZE + 1];
 
 struct stml0xx_algo_requst_t stml0xx_g_algo_requst[STML0XX_NUM_ALGOS];
 
-unsigned char *stml0xx_cmdbuff;
-unsigned char *stml0xx_readbuff;
+unsigned char *stml0xx_boot_cmdbuff;
+unsigned char *stml0xx_boot_readbuff;
 
 /* per algo config, request, and event registers */
 const struct stml0xx_algo_info_t stml0xx_algo_info[STML0XX_NUM_ALGOS] = {
@@ -394,8 +393,8 @@ static struct stml0xx_platform_data *stml0xx_of_init(struct spi_device *spi)
 		dev_dbg(&stml0xx_misc_data->spi->dev,
 			"Not using stml0xx_fw_version override");
 
-	pdata->ct406_detect_threshold = 0x006E;
-	pdata->ct406_undetect_threshold = 0x0050;
+	pdata->ct406_detect_threshold = 0x00C8;
+	pdata->ct406_undetect_threshold = 0x00A5;
 	pdata->ct406_recalibrate_threshold = 0x0064;
 	pdata->ct406_pulse_count = 0x04;
 	of_property_read_u32(np, "ct406_detect_threshold",
@@ -433,13 +432,13 @@ static struct stml0xx_platform_data *stml0xx_of_init(struct spi_device *spi)
 			     &pdata->headset_button_down_debounce);
 	of_property_read_u32(np, "headset_button_up_debounce",
 			     &pdata->headset_button_up_debounce);
-	of_property_read_u32(np, "headset_button_0_1_threshold",
+	of_property_read_u32(np, "headset_button_0-1_threshold",
 			     &pdata->headset_button_0_1_threshold);
-	of_property_read_u32(np, "headset_button_1_2_threshold",
+	of_property_read_u32(np, "headset_button_1-2_threshold",
 			     &pdata->headset_button_1_2_threshold);
-	of_property_read_u32(np, "headset_button_2_3_threshold",
+	of_property_read_u32(np, "headset_button_2-3_threshold",
 			     &pdata->headset_button_2_3_threshold);
-	of_property_read_u32(np, "headset_button_3_upper_threshold",
+	of_property_read_u32(np, "headset_button_3-upper_threshold",
 			     &pdata->headset_button_3_upper_threshold);
 	of_property_read_u32(np, "headset_button_1_keycode",
 			     &pdata->headset_button_1_keycode);
@@ -449,6 +448,13 @@ static struct stml0xx_platform_data *stml0xx_of_init(struct spi_device *spi)
 			     &pdata->headset_button_3_keycode);
 	of_property_read_u32(np, "headset_button_4_keycode",
 			     &pdata->headset_button_4_keycode);
+
+	pdata->accel_orientation_1 = 0;
+	pdata->accel_orientation_2 = 0;
+	of_property_read_u32(np, "accel_orientation_1",
+			     &pdata->accel_orientation_1);
+	of_property_read_u32(np, "accel_orientation_2",
+			     &pdata->accel_orientation_2);
 
 	return pdata;
 }
@@ -715,40 +721,18 @@ static int stml0xx_probe(struct spi_device *spi)
 		err = -ENODEV;
 		goto err_pdata;
 	}
-	/* Allocate DMA buffers */
-	ps_stml0xx->spi_dma_enabled = SPI_DMA_ENABLED;
-	if (ps_stml0xx->spi_dma_enabled) {
-		spi->dev.coherent_dma_mask = ~0;
-		/* Minimum coherent DMA allocation is PAGE_SIZE, so allocate
-		   that much and share it between Tx and Rx DMA buffers. */
-		ps_stml0xx->spi_tx_buf =
-		    dma_alloc_coherent(&spi->dev, PAGE_SIZE,
-				       &ps_stml0xx->spi_tx_dma, GFP_DMA);
 
-		if (ps_stml0xx->spi_tx_buf) {
-			ps_stml0xx->spi_rx_buf = (ps_stml0xx->spi_tx_buf
-						  + (PAGE_SIZE / 2));
-			ps_stml0xx->spi_rx_dma =
-			    (dma_addr_t) (ps_stml0xx->spi_tx_dma +
-					  (PAGE_SIZE / 2));
-		} else {
-			/* Fall back to non-DMA */
-			ps_stml0xx->spi_dma_enabled = false;
-		}
-	}
+	/* Allocate SPI buffers */
+	ps_stml0xx->spi_tx_buf =
+		devm_kzalloc(&spi->dev, SPI_BUFF_SIZE, GFP_KERNEL);
+	ps_stml0xx->spi_rx_buf =
+		devm_kzalloc(&spi->dev, SPI_BUFF_SIZE, GFP_KERNEL);
+	if (!ps_stml0xx->spi_tx_buf || !ps_stml0xx->spi_rx_buf)
+		goto err_nomem;
 
-	if (!ps_stml0xx->spi_dma_enabled) {
-		/* Allocate non-DMA buffers */
-		ps_stml0xx->spi_tx_buf =
-			devm_kzalloc(&spi->dev, SPI_BUFF_SIZE, GFP_KERNEL);
-		ps_stml0xx->spi_rx_buf =
-			devm_kzalloc(&spi->dev, SPI_BUFF_SIZE, GFP_KERNEL);
-		if (!ps_stml0xx->spi_tx_buf || !ps_stml0xx->spi_rx_buf)
-			goto err_nomem;
-	}
-
-	stml0xx_cmdbuff = ps_stml0xx->spi_tx_buf;
-	stml0xx_readbuff = ps_stml0xx->spi_rx_buf;
+	/* global buffers used exclusively in bootloader mode */
+	stml0xx_boot_cmdbuff = ps_stml0xx->spi_tx_buf;
+	stml0xx_boot_readbuff = ps_stml0xx->spi_rx_buf;
 
 	/* initialize regulators */
 	ps_stml0xx->regulator_1 = regulator_get(&spi->dev, "sensor1");
@@ -802,9 +786,12 @@ static int stml0xx_probe(struct spi_device *spi)
 
 	mutex_init(&ps_stml0xx->lock);
 	mutex_init(&ps_stml0xx->sh_wakeup_lock);
+	mutex_init(&ps_stml0xx->spi_lock);
 
 	mutex_lock(&ps_stml0xx->lock);
 	wake_lock_init(&ps_stml0xx->wakelock, WAKE_LOCK_SUSPEND, "stml0xx");
+	wake_lock_init(&ps_stml0xx->wake_sensor_wakelock, WAKE_LOCK_SUSPEND,
+		       "stml0xx_wake_sensor");
 	wake_lock_init(&ps_stml0xx->reset_wakelock, WAKE_LOCK_SUSPEND,
 		       "stml0xx_reset");
 
@@ -814,8 +801,6 @@ static int stml0xx_probe(struct spi_device *spi)
 	/* clear the interrupt mask */
 	ps_stml0xx->intp_mask = 0x00;
 
-	INIT_WORK(&ps_stml0xx->irq_work, stml0xx_irq_work_func);
-	INIT_WORK(&ps_stml0xx->irq_wake_work, stml0xx_irq_wake_work_func);
 	INIT_WORK(&ps_stml0xx->clear_interrupt_status_work,
 		  clear_interrupt_status_work_func);
 	INIT_WORK(&ps_stml0xx->initialize_work, stml0xx_initialize_work_func);
@@ -940,6 +925,7 @@ static int stml0xx_probe(struct spi_device *spi)
 	input_set_drvdata(ps_stml0xx->input_dev, ps_stml0xx);
 	input_set_capability(ps_stml0xx->input_dev, EV_KEY, KEY_POWER);
 	input_set_capability(ps_stml0xx->input_dev, EV_KEY, KEY_CAMERA);
+	input_set_capability(ps_stml0xx->input_dev, EV_SW, SW_LID);
 	if (pdata->headset_button_1_keycode > 0)
 		input_set_capability(ps_stml0xx->input_dev, EV_KEY, pdata->headset_button_1_keycode);
 	if (pdata->headset_button_2_keycode > 0)
@@ -961,28 +947,6 @@ static int stml0xx_probe(struct spi_device *spi)
 		goto err9;
 	}
 
-	ps_stml0xx->led_cdev.name =  STML0XX_LED_NAME;
-	ps_stml0xx->led_cdev.brightness_set = stml0xx_brightness_set;
-	ps_stml0xx->led_cdev.brightness_get = stml0xx_brightness_get;
-	ps_stml0xx->led_cdev.blink_set = stml0xx_blink_set;
-	ps_stml0xx->led_cdev.blink_delay_on = 1000;
-	ps_stml0xx->led_cdev.blink_delay_off = 1000;
-	ps_stml0xx->led_cdev.max_brightness = STML0XX_LED_MAX_BRIGHTNESS;
-	err = led_classdev_register(&spi->dev, &ps_stml0xx->led_cdev);
-	if (err < 0) {
-		dev_err(&ps_stml0xx->spi->dev,
-			"couldn't register \'%s\' LED class\n",
-			ps_stml0xx->led_cdev.name);
-		goto err10;
-	}
-	err = sysfs_create_group(&ps_stml0xx->led_cdev.dev->kobj,
-			&stml0xx_notification_attribute_group);
-	if (err < 0) {
-		dev_err(&ps_stml0xx->spi->dev,
-			"couldn't register LED attribute sysfs group\n");
-		goto err11;
-	}
-
 	ps_stml0xx->is_suspended = false;
 
 	switch_stml0xx_mode(NORMALMODE);
@@ -992,10 +956,6 @@ static int stml0xx_probe(struct spi_device *spi)
 	dev_dbg(&spi->dev, "probed finished");
 
 	return 0;
-err11:
-	led_classdev_unregister(&ps_stml0xx->led_cdev);
-err10:
-	input_free_device(ps_stml0xx->input_dev);
 err9:
 	input_free_device(ps_stml0xx->input_dev);
 err8:
@@ -1014,6 +974,8 @@ err1:
 	mutex_destroy(&ps_stml0xx->lock);
 	wake_unlock(&ps_stml0xx->wakelock);
 	wake_lock_destroy(&ps_stml0xx->wakelock);
+	wake_unlock(&ps_stml0xx->wake_sensor_wakelock);
+	wake_lock_destroy(&ps_stml0xx->wake_sensor_wakelock);
 	wake_unlock(&ps_stml0xx->reset_wakelock);
 	wake_lock_destroy(&ps_stml0xx->reset_wakelock);
 	stml0xx_gpio_free(pdata);
@@ -1028,11 +990,6 @@ err_gpio_init:
 	regulator_put(ps_stml0xx->regulator_1);
 err_regulator:
 err_nomem:
-	if (ps_stml0xx->spi_dma_enabled) {
-		dma_free_coherent(&spi->dev, PAGE_SIZE,
-				  ps_stml0xx->spi_tx_buf,
-				  ps_stml0xx->spi_tx_dma);
-	}
 err_pdata:
 err_other:
 	return err;
@@ -1041,8 +998,6 @@ err_other:
 static int stml0xx_remove(struct spi_device *spi)
 {
 	struct stml0xx_data *ps_stml0xx = spi_get_drvdata(spi);
-
-	led_classdev_unregister(&ps_stml0xx->led_cdev);
 
 	switch_dev_unregister(&ps_stml0xx->dsdev);
 	switch_dev_unregister(&ps_stml0xx->edsdev);
@@ -1064,6 +1019,8 @@ static int stml0xx_remove(struct spi_device *spi)
 	mutex_destroy(&ps_stml0xx->lock);
 	wake_unlock(&ps_stml0xx->wakelock);
 	wake_lock_destroy(&ps_stml0xx->wakelock);
+	wake_unlock(&ps_stml0xx->wake_sensor_wakelock);
+	wake_lock_destroy(&ps_stml0xx->wake_sensor_wakelock);
 	wake_unlock(&ps_stml0xx->reset_wakelock);
 	wake_lock_destroy(&ps_stml0xx->reset_wakelock);
 	disable_irq_wake(ps_stml0xx->irq);
@@ -1082,15 +1039,30 @@ static int stml0xx_remove(struct spi_device *spi)
 
 static int stml0xx_resume(struct device *dev)
 {
+	static struct timespec ts;
+	static struct stml0xx_work_struct *stm_ws;
 	struct stml0xx_data *ps_stml0xx = spi_get_drvdata(to_spi_device(dev));
+
+	get_monotonic_boottime(&ts);
 	dev_dbg(&stml0xx_misc_data->spi->dev, "%s", __func__);
 
 	mutex_lock(&ps_stml0xx->lock);
 	ps_stml0xx->is_suspended = false;
+	enable_irq(ps_stml0xx->irq);
 
 	if (ps_stml0xx->pending_wake_work) {
+		stm_ws = kmalloc(
+			sizeof(struct stml0xx_work_struct),
+			GFP_ATOMIC);
+		if (!stm_ws) {
+			dev_err(dev, "stml0xx_resume: unable to allocate work struct");
+			return 0;
+		}
+		INIT_WORK((struct work_struct *)stm_ws,
+			stml0xx_irq_wake_work_func);
+		stm_ws->ts_ns = ts_to_ns(ts);
 		queue_work(ps_stml0xx->irq_work_queue,
-			   &ps_stml0xx->irq_wake_work);
+			(struct work_struct *)stm_ws);
 		ps_stml0xx->pending_wake_work = false;
 	}
 
@@ -1105,13 +1077,23 @@ static int stml0xx_resume(struct device *dev)
 
 static int stml0xx_suspend(struct device *dev)
 {
+	int mutex_locked = 0;
+	int mutex_timeout = 50;
 	struct stml0xx_data *ps_stml0xx = spi_get_drvdata(to_spi_device(dev));
 	dev_dbg(&stml0xx_misc_data->spi->dev, "%s", __func__);
 
-	mutex_lock(&ps_stml0xx->lock);
+	disable_irq(ps_stml0xx->irq);
 	ps_stml0xx->is_suspended = true;
 
-	mutex_unlock(&ps_stml0xx->lock);
+	/* wait for irq handlers to finish */
+	do {
+		mutex_locked = mutex_trylock(&ps_stml0xx->lock);
+		if (!mutex_locked)
+			usleep_range(500, 1000);
+	} while (!mutex_locked && mutex_timeout-- >= 0);
+
+	if (mutex_locked)
+		mutex_unlock(&ps_stml0xx->lock);
 
 	return 0;
 }

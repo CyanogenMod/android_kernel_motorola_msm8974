@@ -30,12 +30,11 @@
 #endif
 
 /* Log macros */
-#define ENABLE_VERBOSE_LOGGING 1
+#define ENABLE_VERBOSE_LOGGING 0
 
 /* SPI */
-#define SPI_DMA_ENABLED         true
 #define SPI_FLASH_CLK_SPD_HZ    4000000
-#define SPI_NORMAL_CLK_SPD_HZ    4000000
+#define SPI_NORMAL_CLK_SPD_HZ   4000000
 #define SPI_BUFF_SIZE           1152
 #define SPI_RETRIES             5
 #define SPI_RETRY_DELAY         20
@@ -44,15 +43,15 @@
 #define SPI_BARKER_2            0xAE
 #define SPI_HEADER_SIZE         6
 #define SPI_CRC_SIZE            2
-#define SPI_MAX_PAYLOAD_LEN     24
-#define SPI_MSG_TYPE_READ_REG       0x01
-#define SPI_MSG_TYPE_WRITE_REG      0x02
-#define SPI_MSG_TYPE_READ_SENSORS   0x03
 #define SPI_WRITE_REG_HDR_SIZE      6
 #define SPI_READ_REG_HDR_SIZE       6
-#define SPI_MSG_SIZE                32
 #define SPI_CRC_LEN                 2
 #define SPI_READ_SENSORS_HDR_SIZE   3
+#define SPI_TX_PAYLOAD_LEN         88
+#define SPI_MSG_SIZE	\
+	(SPI_HEADER_SIZE+SPI_TX_PAYLOAD_LEN+SPI_CRC_SIZE)
+#define SPI_RX_PAYLOAD_LEN	\
+	(SPI_MSG_SIZE - SPI_CRC_SIZE)
 
 /** The following define the IOCTL command values via the ioctl macros */
 #define STML0XX_IOCTL_BASE		77
@@ -113,13 +112,13 @@
 #define STML0XX_IOCTL_SET_POWER_MODE	\
 		_IOW(STML0XX_IOCTL_BASE, 27, unsigned char)
 #define STML0XX_IOCTL_GET_ALGOS	\
-		_IOR(STML0XX_IOCTL_BASE, 28, char*)
+		_IOR(STML0XX_IOCTL_BASE, 28, char[STML0XX_ALGO_SIZE])
 #define STML0XX_IOCTL_SET_ALGOS	\
-		_IOW(STML0XX_IOCTL_BASE, 29, char*)
+		_IOW(STML0XX_IOCTL_BASE, 29, char[STML0XX_ALGO_SIZE])
 #define STML0XX_IOCTL_GET_MAG_CAL \
-		_IOR(STML0XX_IOCTL_BASE, 30, unsigned char*)
+		_IOR(STML0XX_IOCTL_BASE, 30, char[STML0XX_MAG_CAL_SIZE])
 #define STML0XX_IOCTL_SET_MAG_CAL \
-		_IOW(STML0XX_IOCTL_BASE, 31, unsigned char*)
+		_IOW(STML0XX_IOCTL_BASE, 31, char[STML0XX_MAG_CAL_SIZE])
 /* 32 unused */
 #define STML0XX_IOCTL_SET_MOTION_DUR	\
 		_IOW(STML0XX_IOCTL_BASE, 33, unsigned int)
@@ -131,20 +130,20 @@
 #define STML0XX_IOCTL_SET_WAKESENSORS	\
 		_IOW(STML0XX_IOCTL_BASE, 37, unsigned char)
 #define STML0XX_IOCTL_GET_VERNAME	\
-		_IOW(STML0XX_IOCTL_BASE, 38, char*)
+		_IOW(STML0XX_IOCTL_BASE, 38, char[FW_VERSION_SIZE])
 #define STML0XX_IOCTL_SET_POSIX_TIME	\
 		_IOW(STML0XX_IOCTL_BASE, 39, unsigned long)
 /* 40-42 unused */
 #define STML0XX_IOCTL_SET_ALGO_REQ \
-		_IOR(STML0XX_IOCTL_BASE, 43, char*)
+		_IOR(STML0XX_IOCTL_BASE, 43, char[1])
 #define STML0XX_IOCTL_GET_ALGO_EVT \
-		_IOR(STML0XX_IOCTL_BASE, 44, char*)
+		_IOR(STML0XX_IOCTL_BASE, 44, char[1])
 #define STML0XX_IOCTL_ENABLE_BREATHING \
 		_IOW(STML0XX_IOCTL_BASE, 45, unsigned char)
 #define STML0XX_IOCTL_WRITE_REG \
-		_IOR(STML0XX_IOCTL_BASE, 46, char*)
+		_IOR(STML0XX_IOCTL_BASE, 46, char[1])
 #define STML0XX_IOCTL_READ_REG \
-		_IOR(STML0XX_IOCTL_BASE, 47, char*)
+		_IOR(STML0XX_IOCTL_BASE, 47, char[1])
 /* 48-52 unused */
 #define STML0XX_IOCTL_GET_BOOTED \
 		_IOR(STML0XX_IOCTL_BASE, 53, unsigned char)
@@ -164,6 +163,7 @@
 #define STML0XX_MAG_CAL_SIZE 26
 #define STML0XX_AS_DATA_BUFF_SIZE 20
 #define STML0XX_MS_DATA_BUFF_SIZE 20
+#define STML0XX_ALGO_SIZE	2
 
 #define STML0XX_CAMERA_DATA 0x01
 
@@ -319,6 +319,20 @@ enum lowpower_mode {
 	LOWPOWER_ENABLED
 };
 
+enum sh_log_level {
+	SH_LOG_DISABLE,
+	SH_LOG_ERROR,
+	SH_LOG_VERBOSE,
+	SH_LOG_DEBUG
+};
+
+enum sh_spi_msg {
+	SPI_MSG_TYPE_READ_REG = 1,
+	SPI_MSG_TYPE_WRITE_REG,
+	SPI_MSG_TYPE_READ_IRQ_DATA,
+	SPI_MSG_TYPE_READ_WAKE_IRQ_DATA
+};
+
 struct stm_response {
 	/* 0x0080 */
 	unsigned short header;
@@ -336,9 +350,10 @@ struct stm_response {
 /* STML0XX memory map */
 #define ID                              0x00
 #define REV_ID                          0x01
-#define ERROR_STATUS                    0x02
+#define LOG_MSG_STATUS                  0x02
 #define LOWPOWER_REG                    0x03
 #define INIT_COMPLETE_REG               0x04
+#define ACCEL_ORIENTATION		0x06
 
 #define STML0XX_PEEKDATA_REG             0x09
 #define STML0XX_PEEKSTATUS_REG           0x0A
@@ -412,6 +427,8 @@ struct stm_response {
 #define NFC                             0x4D
 #define SIM                             0x4E
 
+#define SH_LOG_LEVEL_REG                0x55
+
 #define ALGO_CFG_ACCUM_MODALITY         0x5D
 #define ALGO_REQ_ACCUM_MODALITY         0x60
 #define ALGO_EVT_ACCUM_MODALITY         0x63
@@ -460,13 +477,44 @@ struct stm_response {
 
 #define STML0XX_MAX_REG_LEN         255
 
-#define ESR_SIZE			24
+#define LOG_MSG_SIZE			24
 
 #define STML0XX_RESET_DELAY		50
 
 #define I2C_RESPONSE_LENGTH		8
 
 #define STML0XX_MAXDATA_LENGTH		256
+
+/* stml0xx IRQ SPI buffer indexes */
+#define IRQ_IDX_STATUS_LO         0
+#define IRQ_IDX_STATUS_MED        1
+#define IRQ_IDX_STATUS_HI         2
+#define IRQ_IDX_ACCEL1            3
+#define IRQ_IDX_ACCEL2           36
+#define IRQ_IDX_ALS              42
+#define IRQ_IDX_DISP_ROTATE      44
+#define IRQ_IDX_DISP_BRIGHTNESS  45
+
+/* stml0xx WAKE IRQ SPI buffer indexes */
+#define WAKE_IRQ_IDX_STATUS_LO              0
+#define WAKE_IRQ_IDX_STATUS_MED             1
+#define WAKE_IRQ_IDX_ALGO_STATUS_LO         2
+#define WAKE_IRQ_IDX_ALGO_STATUS_MED        3
+#define WAKE_IRQ_IDX_ALGO_STATUS_HI         4
+#define WAKE_IRQ_IDX_PROX                   5
+#define WAKE_IRQ_IDX_COVER                  6
+#define WAKE_IRQ_IDX_HEADSET                7
+#define WAKE_IRQ_IDX_FLAT                   8
+#define WAKE_IRQ_IDX_STOWED                 9
+#define WAKE_IRQ_IDX_CAMERA                10
+#define WAKE_IRQ_IDX_SIM                   12
+#define WAKE_IRQ_IDX_MOTION                14
+#define WAKE_IRQ_IDX_MODALITY              16
+#define WAKE_IRQ_IDX_MODALITY_ORIENT       23
+#define WAKE_IRQ_IDX_MODALITY_STOWED       30
+#define WAKE_IRQ_IDX_MODALITY_ACCUM        37
+#define WAKE_IRQ_IDX_MODALITY_ACCUM_MVMT   39
+#define WAKE_IRQ_IDX_LOG_MSG               43
 
 /* stml0xx_readbuff offsets. */
 #define IRQ_WAKE_LO  0
@@ -523,10 +571,13 @@ struct stm_response {
 
 /* The following macros are intended to be called with the stm IRQ handlers */
 /* only and refer to local variables in those functions. */
-#define STM16_TO_HOST(x) ((short) be16_to_cpu( \
-		*((u16 *) (stml0xx_readbuff+(x)))))
-#define STM32_TO_HOST(x) ((short) be32_to_cpu( \
-		*((u32 *) (stml0xx_readbuff+(x)))))
+#define STM16_TO_HOST(x, buf) ((short) be16_to_cpu( \
+		*((u16 *) (buf+(x)))))
+#define STM32_TO_HOST(x, buf) ((short) be32_to_cpu( \
+		*((u32 *) (buf+(x)))))
+
+#define STML0XX_HALL_SOUTH 1
+#define STML0XX_HALL_NORTH 2
 
 struct stml0xx_platform_data {
 	int (*init) (void);
@@ -562,19 +613,18 @@ struct stml0xx_platform_data {
 	int headset_button_2_keycode;
 	int headset_button_3_keycode;
 	int headset_button_4_keycode;
+	int accel_orientation_1;
+	int accel_orientation_2;
 };
 
 struct stml0xx_data {
-	struct spi_device *spi;
 	struct stml0xx_platform_data *pdata;
-	/* to avoid two spi communications at the same time */
 	struct mutex lock;
-	struct work_struct irq_work;
-	struct work_struct irq_wake_work;
 	struct work_struct clear_interrupt_status_work;
 	struct work_struct initialize_work;
 	struct workqueue_struct *irq_work_queue;
 	struct wake_lock wakelock;
+	struct wake_lock wake_sensor_wakelock;
 	struct wake_lock reset_wakelock;
 	struct input_dev *input_dev;
 
@@ -584,12 +634,11 @@ struct stml0xx_data {
 
 	int hw_initialized;
 
-	/* SPI DMA */
-	bool spi_dma_enabled;
+	/* SPI */
+	struct spi_device *spi;
+	struct mutex spi_lock;
 	unsigned char *spi_tx_buf;
 	unsigned char *spi_rx_buf;
-	dma_addr_t spi_tx_dma;
-	dma_addr_t spi_rx_dma;
 
 	atomic_t enabled;
 	int irq;
@@ -624,8 +673,16 @@ struct stml0xx_data {
 
 	bool is_suspended;
 	bool pending_wake_work;
+};
 
-	struct led_classdev led_cdev;
+#ifndef ts_to_ns
+# define ts_to_ns(ts) ((ts).tv_sec*1000000000LL + (ts).tv_nsec)
+#endif
+struct stml0xx_work_struct {
+	/* Base struct */
+	struct work_struct ws;
+	/* Timestamp in nanoseconds */
+	uint64_t ts_ns;
 };
 
 /* per algo config, request, and event registers */
@@ -654,13 +711,14 @@ void stml0xx_irq_wake_work_func(struct work_struct *work);
 
 long stml0xx_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
-void stml0xx_reset(struct stml0xx_platform_data *pdata, unsigned char *cmdbuff);
+void stml0xx_reset(struct stml0xx_platform_data *pdata);
 void stml0xx_initialize_work_func(struct work_struct *work);
 
 
 int stml0xx_as_data_buffer_write(struct stml0xx_data *ps_stml0xx,
 				 unsigned char type, unsigned char *data,
-				 int size, unsigned char status);
+				 int size, unsigned char status,
+				 uint64_t timestamp_ns);
 int stml0xx_as_data_buffer_read(struct stml0xx_data *ps_stml0xx,
 				struct stml0xx_android_sensor_data *buff);
 int stml0xx_ms_data_buffer_write(struct stml0xx_data *ps_stml0xx,
@@ -690,6 +748,10 @@ int stml0xx_spi_send_read_reg(unsigned char reg_type,
 int stml0xx_spi_send_read_reg_reset(unsigned char reg_type,
 			      unsigned char *reg_data, int reg_data_size,
 			      uint8_t reset_allowed);
+int stml0xx_spi_read_msg_data(enum sh_spi_msg spi_msg,
+				unsigned char *data_buffer,
+				int buffer_size,
+				enum reset_option reset_allowed);
 void stml0xx_spi_swap_bytes(unsigned char *data, int size);
 unsigned short stml0xx_spi_calculate_crc(unsigned char *data, int len);
 void stml0xx_spi_append_crc(unsigned char *data, int len);
@@ -737,8 +799,9 @@ extern unsigned char stml0xx_g_mag_cal[STML0XX_MAG_CAL_SIZE];
 extern unsigned short stml0xx_g_control_reg_restore;
 extern bool stml0xx_g_booted;
 
-extern unsigned char *stml0xx_cmdbuff;
-extern unsigned char *stml0xx_readbuff;
+/* global buffers used exclusively in bootloader mode */
+extern unsigned char *stml0xx_boot_cmdbuff;
+extern unsigned char *stml0xx_boot_readbuff;
 
 extern unsigned short stml0xx_spi_retry_delay;
 

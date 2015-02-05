@@ -428,6 +428,12 @@ static int lock_output_data(struct qpnp_bms_chip *chip)
 		pr_err("couldnt lock bms output rc = %d\n", rc);
 		return rc;
 	}
+	/*
+	 * Sleep for at least 60 microseconds here to make sure there has
+	 * been at least two cycles of the sleep clock so that the registers
+	 * are correctly locked.
+	 */
+	usleep_range(60, 2000);
 	return 0;
 }
 
@@ -1028,14 +1034,17 @@ static int read_soc_params_raw(struct qpnp_bms_chip *chip,
 			chip->base + BMS1_OCV_FOR_SOC_DATA0, 2);
 	if (rc) {
 		pr_err("Error reading ocv: rc = %d\n", rc);
-		return -ENXIO;
+		goto param_err;
 	}
 
 	rc = read_cc_raw(chip, &raw->cc, CC);
-	rc = read_cc_raw(chip, &raw->shdw_cc, SHDW_CC);
-	if (rc) {
+	if (rc)
 		pr_err("Failed to read raw cc data, rc = %d\n", rc);
-		return rc;
+
+	rc |= read_cc_raw(chip, &raw->shdw_cc, SHDW_CC);
+	if (rc) {
+		pr_err("Failed to read raw SW shadow cc data, rc = %d\n", rc);
+		goto param_err;
 	}
 
 	unlock_output_data(chip);
@@ -1093,6 +1102,11 @@ static int read_soc_params_raw(struct qpnp_bms_chip *chip,
 			raw->last_good_ocv_raw, raw->last_good_ocv_uv);
 	pr_debug("cc_raw= 0x%llx\n", raw->cc);
 	return 0;
+
+param_err:
+	unlock_output_data(chip);
+	mutex_unlock(&chip->bms_output_lock);
+	return rc;
 }
 
 static int calculate_pc(struct qpnp_bms_chip *chip, int ocv_uv,
@@ -2646,7 +2660,12 @@ static int recalculate_raw_soc(struct qpnp_bms_chip *chip)
 			batt_temp = (int)result.physical;
 
 			mutex_lock(&chip->last_ocv_uv_mutex);
-			read_soc_params_raw(chip, &raw, batt_temp);
+			rc = read_soc_params_raw(chip, &raw, batt_temp);
+			if (rc) {
+				pr_err("Unable to read params, rc: %d\n", rc);
+				soc = 0;
+				goto done;
+			}
 			calculate_soc_params(chip, &raw, &params, batt_temp);
 			if (!is_battery_present(chip)) {
 				pr_debug("battery gone\n");
@@ -2660,6 +2679,7 @@ static int recalculate_raw_soc(struct qpnp_bms_chip *chip)
 				soc = calculate_raw_soc(chip, &raw,
 							&params, batt_temp);
 			}
+done:
 			mutex_unlock(&chip->last_ocv_uv_mutex);
 		}
 	}
@@ -2698,8 +2718,14 @@ static int recalculate_soc(struct qpnp_bms_chip *chip)
 			batt_temp = (int)result.physical;
 
 			mutex_lock(&chip->last_ocv_uv_mutex);
-			read_soc_params_raw(chip, &raw, batt_temp);
-			soc = calculate_state_of_charge(chip, &raw, batt_temp);
+			rc = read_soc_params_raw(chip, &raw, batt_temp);
+			if (rc) {
+				pr_err("Unable to read params, rc: %d\n", rc);
+				soc = chip->calculated_soc;
+			} else {
+				soc = calculate_state_of_charge(chip,
+						&raw, batt_temp);
+			}
 			mutex_unlock(&chip->last_ocv_uv_mutex);
 		}
 		if (chip->shutdown_voltage) {

@@ -22,6 +22,10 @@
 	chosen {
 		mmi,no-factory-kill-ic;
 	};
+
+	aliases {
+		/delete-property/ spi4;
+	};
 };
 
 &mmi_factory {
@@ -29,7 +33,7 @@
 };
 
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&mot_boe_450_qhd_vid_v2>;
+	qcom,dsi-pref-prim-pan = <&mot_boe_450_qhd_vid_v3>;
 	lcd_vci-supply = <&pm8110_l19>;
 	vddio_disp-supply = <&pm8110_l6>;
 };
@@ -42,6 +46,32 @@
 &pm8110_l6 {
 	regulator-always-on;
 	regulator-boot-on;
+};
+
+&mot_boe_450_qhd_vid_v3 {
+	qcom,cont-splash-enabled;
+	qcom,platform-supply-entry1 {
+		qcom,supply-name = "lcd_vci";
+		qcom,supply-min-voltage = <2850000>;
+		qcom,supply-max-voltage = <2850000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-pre-on-sleep = <0>;
+		qcom,supply-post-on-sleep = <0>;
+		qcom,supply-pre-off-sleep = <0>;
+		qcom,supply-post-off-sleep = <0>;
+	};
+	qcom,platform-supply-entry2 {
+		qcom,supply-name = "vddio_disp";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-pre-on-sleep = <0>;
+		qcom,supply-post-on-sleep = <0>;
+		qcom,supply-pre-off-sleep = <0>;
+		qcom,supply-post-off-sleep = <0>;
+	};
 };
 
 &mot_boe_450_qhd_vid_v2 {
@@ -122,6 +152,32 @@
 	};
 };
 
+&mot_inx_450_qhd_vid_v1 {
+	qcom,cont-splash-enabled;
+	qcom,platform-supply-entry1 {
+		qcom,supply-name = "lcd_vci";
+		qcom,supply-min-voltage = <2850000>;
+		qcom,supply-max-voltage = <2850000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-pre-on-sleep = <0>;
+		qcom,supply-post-on-sleep = <0>;
+		qcom,supply-pre-off-sleep = <0>;
+		qcom,supply-post-off-sleep = <0>;
+	};
+	qcom,platform-supply-entry2 {
+		qcom,supply-name = "vddio_disp";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <300000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-pre-on-sleep = <0>;
+		qcom,supply-post-on-sleep = <0>;
+		qcom,supply-pre-off-sleep = <0>;
+		qcom,supply-post-off-sleep = <0>;
+	};
+};
+
 &mot_inx_450_qhd_vid_v0 {
 	qcom,cont-splash-enabled;
 	qcom,platform-supply-entry1 {
@@ -163,6 +219,12 @@
 };
 
 &soc {
+	/delete-node/ fan5646;
+
+	sound {
+		/delete-property/ qcom,ext-spk-amp-gpio;
+	};
+
 	dummy_vreg: dummy_vreg {
 		compatible = "regulator-fixed";
 		status = "ok";
@@ -182,6 +244,11 @@
 		};
 	};
 
+	/* Override USB Phy seq for Otus */
+	usb@f9a55000 {
+		qcom,hsusb-otg-phy-init-seq =
+			<0x44 0x80 0x49 0x81 0x36 0x82 0x3C 0x83 0xffffffff>;
+	};
 
 	i2c_2: i2c@f9924000 { /* BLSP-1 QUP-2 */
 		cell-index = <2>;
@@ -227,10 +294,11 @@
 		compatible = "qcom,spi-qup-v2";
 		#address-cells = <1>;
 		#size-cells = <0>;
-		reg-names = "spi_physical";
-		reg = <0xf9925000 0x1000>;
-		interrupt-names = "spi_irq";
-		interrupts = <0 97 0>;
+		reg-names = "spi_physical", "spi_bam_physical";
+		reg = <0xf9925000 0x1000>,
+			<0xf9904000 0x15000>;
+		interrupt-names = "spi_irq", "spi_bam_irq";
+		interrupts = <0 97 0>, <0 238 0>;
 		spi-max-frequency = <8000000>;
 
 		qcom,gpio-mosi = <&msmgpio 8 0>;
@@ -240,6 +308,8 @@
 
 		qcom,infinite-mode = <0>;
 		qcom,ver-reg-exists;
+		qcom,bam-consumer-pipe-index = <16>;
+		qcom,bam-producer-pipe-index = <17>;
 		qcom,master-id = <86>;
 
 		stml0xx@0 {
@@ -256,20 +326,20 @@
 			lux_table = <5 50 100 1500 3000 8000>;
 			brightness_table = <9 14 18 46 67 93 140>;
 			bslen_pin_active_value = <1>;
-			ct406_detect_threshold = <0x006E>;
-			ct406_undetect_threshold = <0x0050>;
+			ct406_detect_threshold = <0x00C8>;
+			ct406_undetect_threshold = <0x00A5>;
 			ct406_recalibrate_threshold = <0x0064>;
 			ct406_pulse_count = <0x04>;
 			headset_detect_enable = <1>;
-			headset_hw_version = <1>;
+			headset_hw_version = <2>;
 			headset_insertion_debounce = <0x01F4>;
 			headset_removal_debounce = <0x0080>;
 			headset_button_down_debounce = <0x0032>;
 			headset_button_up_debounce = <0x0032>;
-			headset_button_0_1_threshold = <0x0096>;
-			headset_button_1_2_threshold = <0x012C>;
-			headset_button_2_3_threshold = <0x01C2>;
-			headset_button_3_upper_threshold = <0x02EE>;
+			headset_button_0-1_threshold = <0x009D>;
+			headset_button_1-2_threshold = <0x0145>;
+			headset_button_2-3_threshold = <0x0201>;
+			headset_button_3-upper_threshold = <0x03B0>;
 			headset_button_1_keycode = <0xE2>;  /* KEY_MEDIA        */
 			headset_button_2_keycode = <0x246>; /* KEY_VOICECOMMAND */
 			headset_button_3_keycode = <0x73>;  /* KEY_VOLUMEUP     */
@@ -279,12 +349,27 @@
 			sensor3-supply = <&pm8110_l19>;
 		};
 	};
+	/delete-node/ spi@f9926000;
+
+	qcom,msm-thermal {
+		qcom,cpu-sensors = "tsens_tz_sensor5", "tsens_tz_sensor5",
+				"tsens_tz_sensor5", "tsens_tz_sensor5";
+	};
 };
 
 &spmi_bus {
 	qcom,pm8110@0 {
 		qcom,leds@a200 {
 			status = "disabled";
+		};
+
+		qcom,power-on@800 {
+			qcom,pon_1 {
+				qcom,support-reset = <1>;
+				qcom,s1-timer = <6720>;
+				qcom,s2-timer = <2000>;
+				qcom,s2-type = <8>;
+			};
 		};
 	};
 };
@@ -310,7 +395,14 @@
 		qcom,fast-avg-setup = <0>;
 	};
 };
+
 &sdhc_2 {
 	qcom,pad-drv-on = <0x5 0x2 0x2>; /* 12mA, 6mA, 6mA */
-	qcom,bus-speed-mode = "SDR12_1p8v", "SDR25_1p8v", "SDR50_1p8v", "DDR_1p8v", "SDR104_1p8v";
+	qcom,clk-rates = <400000 25000000 50000000 100000000>;
+	qcom,bus-speed-mode = "SDR12_1p8v", "SDR25_1p8v", "SDR50_1p8v", "DDR_1p8v";
+};
+
+&pm8110_chg_fac {
+		qcom,factory_detect_gpio = <&msmgpio 75 0x1>; /* GPIOF_DIR_IN | GPIOF_INIT_HIGH */
+		gpio-names = "factory_cable_detect";
 };

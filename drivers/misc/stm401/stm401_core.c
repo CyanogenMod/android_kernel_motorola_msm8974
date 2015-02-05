@@ -16,6 +16,7 @@
  * 02111-1307, USA
  */
 
+#include <linux/android_alarm.h>
 #include <linux/cdev.h>
 #include <linux/delay.h>
 #include <linux/err.h>
@@ -30,12 +31,14 @@
 #include <linux/input-polldev.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
+#include <linux/ktime.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/poll.h>
 #include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 #include <linux/switch.h>
+#include <linux/sysfs.h>
 #include <linux/time.h>
 #include <linux/uaccess.h>
 #include <linux/wakelock.h>
@@ -63,6 +66,8 @@ unsigned short stm401_i2c_retry_delay = 13;
 unsigned short stm401_g_acc_delay;
 unsigned short stm401_g_mag_delay;
 unsigned short stm401_g_gyro_delay;
+uint8_t stm401_g_rv_6axis_delay = 40;
+uint8_t stm401_g_rv_9axis_delay = 40;
 unsigned short stm401_g_baro_delay;
 unsigned short stm401_g_step_counter_delay;
 unsigned short stm401_g_ir_gesture_delay;
@@ -84,9 +89,6 @@ unsigned char stat_string[ESR_SIZE+1];
 
 struct stm401_algo_requst_t stm401_g_algo_requst[STM401_NUM_ALGOS];
 
-unsigned char stm401_cmdbuff[512];
-unsigned char stm401_readbuff[READ_CMDBUFF_SIZE];
-
 /* per algo config, request, and event registers */
 const struct stm401_algo_info_t stm401_algo_info[STM401_NUM_ALGOS] = {
 	{ M_ALGO_MODALITY, ALGO_CFG_MODALITY, ALGO_REQ_MODALITY,
@@ -103,6 +105,144 @@ const struct stm401_algo_info_t stm401_algo_info[STM401_NUM_ALGOS] = {
 };
 
 struct stm401_data *stm401_misc_data;
+
+/* STM401 sysfs functions/attributes */
+
+/* Attribute: timestamp_time_ns (RO) */
+static ssize_t timestamp_time_ns_show(
+	struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
+{
+	*((uint64_t *)buf) = stm401_timestamp_ns();
+	return sizeof(uint64_t);
+}
+
+/* Attribute: rv_6axis_update_rate (RW) */
+static ssize_t rv_6axis_update_rate_show(
+	struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
+{
+	*((uint8_t *)buf) = stm401_g_rv_6axis_delay;
+	return sizeof(uint8_t);
+}
+static ssize_t rv_6axis_update_rate_store(
+	struct device *dev,
+	struct device_attribute *attr,
+	const char *buf,
+	size_t count)
+{
+	int err = 0;
+	if (count < 1)
+		return -EINVAL;
+	err = stm401_set_rv_6axis_update_rate(
+		stm401_misc_data,
+		*((uint8_t *)buf));
+	if (err)
+		return err;
+	else
+		return sizeof(uint8_t);
+}
+
+/* Attribute: rv_9axis_update_rate (RW) */
+static ssize_t rv_9axis_update_rate_show(
+	struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
+{
+	*((uint8_t *)buf) = stm401_g_rv_9axis_delay;
+	return sizeof(uint8_t);
+}
+static ssize_t rv_9axis_update_rate_store(
+	struct device *dev,
+	struct device_attribute *attr,
+	const char *buf,
+	size_t count)
+{
+	int err = 0;
+	if (count < 1)
+		return -EINVAL;
+	err = stm401_set_rv_9axis_update_rate(
+		stm401_misc_data,
+		*((uint8_t *)buf));
+	if (err)
+		return err;
+	else
+		return sizeof(uint8_t);
+}
+
+static struct device_attribute stm401_attributes[] = {
+	__ATTR_RO(timestamp_time_ns),
+	__ATTR(
+		rv_6axis_update_rate,
+		0664,
+		rv_6axis_update_rate_show,
+		rv_6axis_update_rate_store),
+	__ATTR(
+		rv_9axis_update_rate,
+		0664,
+		rv_9axis_update_rate_show,
+		rv_9axis_update_rate_store),
+	__ATTR_NULL
+};
+
+static int create_device_attributes(
+	struct device *dev,
+	struct device_attribute *attrs)
+{
+	int i;
+	int err = 0;
+
+	for (i = 0; attrs[i].attr.name != NULL; ++i) {
+		err = device_create_file(dev, &attrs[i]);
+		if (err)
+			break;
+	}
+
+	if (err) {
+		for (--i; i >= 0; --i)
+			device_remove_file(dev, &attrs[i]);
+	}
+
+	return err;
+}
+
+static void remove_device_attributes(
+	struct device *dev,
+	struct device_attribute *attrs)
+{
+	int i;
+
+	for (i = 0; attrs[i].attr.name != NULL; ++i)
+		device_remove_file(dev, &attrs[i]);
+}
+
+static int create_sysfs_interfaces(struct stm401_data *ps_stm401)
+{
+	int err = 0;
+
+	if (!ps_stm401)
+		return -EINVAL;
+
+	err = create_device_attributes(
+		ps_stm401->stm401_class_dev,
+		stm401_attributes);
+
+	if (err < 0)
+		remove_device_attributes(
+			ps_stm401->stm401_class_dev,
+			stm401_attributes);
+	return err;
+}
+
+/* END: STM401 sysfs functions/attributes */
+
+int64_t stm401_timestamp_ns(void)
+{
+	ktime_t now = alarm_get_elapsed_realtime();
+	return ktime_to_ns(now);
+}
 
 void stm401_wake(struct stm401_data *ps_stm401)
 {
@@ -165,6 +305,7 @@ void stm401_detect_lowpower_mode(unsigned char *cmdbuff)
 	int err;
 	bool factory;
 	struct device_node *np = of_find_node_by_path("/chosen");
+	unsigned char readbuff[STM401_MAXDATA_LENGTH];
 
 	if (np) {
 		/* detect factory cable and disable lowpower mode
@@ -202,10 +343,13 @@ void stm401_detect_lowpower_mode(unsigned char *cmdbuff)
 
 		cmdbuff[0] = LOWPOWER_REG;
 		err =
-		    stm401_i2c_write_read_no_reset(stm401_misc_data,
-						   cmdbuff, 1, 2);
+		    stm401_i2c_write_read_no_reset(
+				stm401_misc_data,
+				cmdbuff,
+				readbuff,
+				1, 2);
 		if (err >= 0) {
-			if ((int)stm401_readbuff[1] == 1)
+			if ((int)readbuff[1] == 1)
 				stm401_misc_data->sh_lowpower_enabled = 1;
 			else
 				stm401_misc_data->sh_lowpower_enabled = 0;
@@ -246,8 +390,12 @@ void stm401_detect_lowpower_mode(unsigned char *cmdbuff)
 	}
 }
 
-int stm401_i2c_write_read_no_reset(struct stm401_data *ps_stm401,
-			u8 *buf, int writelen, int readlen)
+int stm401_i2c_write_read_no_reset(
+	struct stm401_data *ps_stm401,
+	u8 *writebuf,
+	u8 *readbuf,
+	int writelen,
+	int readlen)
 {
 	int tries, err = 0;
 	struct i2c_msg msgs[] = {
@@ -255,16 +403,21 @@ int stm401_i2c_write_read_no_reset(struct stm401_data *ps_stm401,
 			.addr = ps_stm401->client->addr,
 			.flags = ps_stm401->client->flags,
 			.len = writelen,
-			.buf = buf,
+			.buf = writebuf,
 		},
 		{
 			.addr = ps_stm401->client->addr,
 			.flags = ps_stm401->client->flags | I2C_M_RD,
 			.len = readlen,
-			.buf = stm401_readbuff,
+			.buf = readbuf,
 		},
 	};
-	if (buf == NULL || writelen == 0 || readlen == 0)
+	if (
+		writebuf == NULL ||
+		readbuf == NULL ||
+		writelen == 0 ||
+		readlen == 0
+	)
 		return -EFAULT;
 
 	if (ps_stm401->mode == BOOTMODE)
@@ -284,7 +437,7 @@ int stm401_i2c_write_read_no_reset(struct stm401_data *ps_stm401,
 		dev_dbg(&ps_stm401->client->dev, "Read from STM401: ");
 		for (tries = 0; tries < readlen; tries++)
 			dev_dbg(&ps_stm401->client->dev, "%02x",
-				stm401_readbuff[tries]);
+				readbuf[tries]);
 	}
 
 	return err;
@@ -388,21 +541,30 @@ static int stm401_device_power_on(struct stm401_data *ps_stm401)
 	return err;
 }
 
-int stm401_i2c_write_read(struct stm401_data *ps_stm401, u8 *buf,
-			int writelen, int readlen)
+int stm401_i2c_write_read(
+	struct stm401_data *ps_stm401,
+	u8 *writebuf,
+	u8 *readbuff,
+	int writelen,
+	int readlen)
 {
 	int tries, err = 0;
 
 	if (ps_stm401->mode == BOOTMODE)
 		return -EFAULT;
 
-	if (buf == NULL || writelen == 0 || readlen == 0)
+	if (
+		writebuf == NULL ||
+		readbuff == NULL ||
+		writelen == 0 ||
+		readlen == 0
+	)
 		return -EFAULT;
 
 	tries = 0;
 	do {
 		err = stm401_i2c_write_read_no_reset(ps_stm401,
-			buf, writelen, readlen);
+			writebuf, readbuff, writelen, readlen);
 		if (err < 0)
 			stm401_reset_and_init();
 	} while ((err < 0) && (++tries < RESET_RETRIES));
@@ -841,6 +1003,8 @@ void clear_interrupt_status_work_func(struct work_struct *work)
 {
 	struct stm401_data *ps_stm401 = container_of(work,
 			struct stm401_data, clear_interrupt_status_work);
+	unsigned char cmdbuff[1];
+	unsigned char readbuff[3];
 
 	dev_dbg(&ps_stm401->client->dev, "clear_interrupt_status_work_func\n");
 	mutex_lock(&ps_stm401->lock);
@@ -855,8 +1019,8 @@ void clear_interrupt_status_work_func(struct work_struct *work)
 
 	/* read interrupt mask register to clear
 			any interrupt during suspend state */
-	stm401_cmdbuff[0] = INTERRUPT_STATUS;
-	stm401_i2c_write_read(ps_stm401, stm401_cmdbuff, 1, 3);
+	cmdbuff[0] = INTERRUPT_STATUS;
+	stm401_i2c_write_read(ps_stm401, cmdbuff, readbuff, 1, 3);
 
 	stm401_sleep(ps_stm401);
 EXIT:
@@ -1007,9 +1171,16 @@ static int stm401_probe(struct i2c_client *client,
 		dev_err(&client->dev,
 			"cdev_add as failed: %d\n", err);
 
-	device_create(ps_stm401->stm401_class, NULL,
+	ps_stm401->stm401_class_dev = device_create(
+		ps_stm401->stm401_class, NULL,
 		MKDEV(MAJOR(ps_stm401->stm401_dev_num), 0),
 		ps_stm401, "stm401_as");
+
+	err = create_sysfs_interfaces(ps_stm401);
+	if (err)
+		dev_err(&client->dev,
+			"create_sysfs_interfaces failed: %d",
+			err);
 
 	cdev_init(&ps_stm401->ms_cdev, &stm401_ms_fops);
 	ps_stm401->ms_cdev.owner = THIS_MODULE;
