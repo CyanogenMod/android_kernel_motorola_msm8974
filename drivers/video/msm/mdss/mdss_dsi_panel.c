@@ -685,10 +685,6 @@ static int mdss_dsi_panel_cont_splash_on(struct mdss_panel_data *pdata)
 {
 	mdss_dsi_panel_regulator_on(pdata, 1);
 
-	if (pdata->panel_info.type == MIPI_VIDEO_PANEL &&
-		pdata->panel_info.no_solid_fill)
-		mdss_dsi_sw_reset(pdata);
-
 	mmi_panel_notify(MMI_PANEL_EVENT_DISPLAY_ON, NULL);
 
 #ifndef CONFIG_FB_MSM_MDSS_MDP3
@@ -2012,12 +2008,6 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	} else {
 		pr_info("%s:%d Quickdraw disabled.\n", __func__, __LINE__);
 	}
-
-	pinfo->no_solid_fill =
-		of_property_read_bool(np, "qcom,splash-no-solid-fill");
-	if (pinfo->mipi.mode == DSI_VIDEO_MODE && !pinfo->no_solid_fill)
-		pr_warn("%s: 'No Solid Fill' not set for video mode panel",
-			__func__);
 
 	if (mdss_panel_parse_optional_prop(np, pinfo, ctrl_pdata)) {
 		pr_err("Error parsing optional properties\n");

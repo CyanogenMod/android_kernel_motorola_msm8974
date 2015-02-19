@@ -786,7 +786,7 @@ int mdss_mdp_video_reconfigure_splash_done(struct mdss_mdp_ctl *ctl,
 		goto error;
 	}
 
-	if (!handoff || ctl->no_solid_fill) {
+	if (!handoff) {
 		pr_debug("%s Turning TG OFF\n", __func__);
 		mdss_mdp_ctl_write(ctl, 0, MDSS_MDP_LM_BORDER_COLOR);
 		mdp_video_write(ctx, MDSS_MDP_REG_INTF_TIMING_ENGINE_EN, 0);
