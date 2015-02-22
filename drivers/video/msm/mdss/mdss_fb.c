@@ -1263,8 +1263,8 @@ int mdss_fb_alloc_fb_ion_memory(struct msm_fb_data_type *mfd, size_t fb_size)
 	pr_debug("alloc 0x%zuB vaddr = %p (%pa iova) for fb%d\n", fb_size,
 			vaddr, &mfd->iova, mfd->index);
 
+	mfd->fbi->screen_base = (char *) vaddr;
 	mfd->fbi->fix.smem_start = (unsigned int) mfd->iova;
-	// mfd->fbi->screen_base = (char *) vaddr; /* MOTOROLA HAD THIS HERE? */
 	mfd->fbi->fix.smem_len = fb_size;
 
 	return rc;
