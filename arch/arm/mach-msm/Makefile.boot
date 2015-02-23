@@ -80,6 +80,7 @@ ifneq ($(CONFIG_MMI_DEVICE_DTBS),y)
 endif
 
 # MSM8974 Motorola Devices
+dtb-$(CONFIG_ARCH_MSM8974)	+= msm8974pro-ab-victara-p0.dtb
 dtb-$(CONFIG_ARCH_MSM8974)	+= msm8974pro-ab-victara-p1b.dtb
 dtb-$(CONFIG_ARCH_MSM8974)	+= msm8974pro-ab-victara-p2a.dtb
 dtb-$(CONFIG_ARCH_MSM8974)	+= msm8974pro-ab-victara-p2b.dtb
@@ -156,8 +157,8 @@ dtb-$(CONFIG_ARCH_MSM8226)	+= msm8226-titan-4e.dtb
 dtb-$(CONFIG_ARCH_MSM8226)	+= msm8226-titan-4f.dtb
 dtb-$(CONFIG_ARCH_MSM8226)	+= msm8926-thea-p1a.dtb
 dtb-$(CONFIG_ARCH_MSM8226)	+= msm8926-thea-p1c.dtb
-dtb-$(CONFIG_ARCH_MSM8226)	+= msm8926-thea-p2a.dtb
-dtb-$(CONFIG_ARCH_MSM8226)	+= msm8926-thea-p2b.dtb
+dtb-$(CONFIG_ARCH_MSM8226)	+= msm8926-thea-p2.dtb
+dtb-$(CONFIG_ARCH_MSM8226)	+= msm8926-thea-p3.dtb
 else ifeq ($(CONFIG_MMI_PEREGRINE_DTB),y)
 dtb-$(CONFIG_ARCH_MSM8226)	+= msm8926-peregrine-p1.dtb
 dtb-$(CONFIG_ARCH_MSM8226)	+= msm8926-peregrine-p1c.dtb
@@ -211,6 +212,9 @@ ifneq ($(CONFIG_MMI_DEVICE_DTBS),y)
 endif
 
 # MSM8610 Motorola Devices
+dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-condor-p0.dtb
+dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-condor-p0c.dtb
+dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-condor-p0c-v2.dtb
 dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-condor-p1b.dtb
 dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-condor-p1b-v2.dtb
 dtb-$(CONFIG_ARCH_MSM8610)	+= msm8610-condor-p1c.dtb

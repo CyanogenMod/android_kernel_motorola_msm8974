@@ -44,11 +44,6 @@
 	gpio = <&msmgpio 69 0x0>;
 };
 
-&vddio_disp_vreg {
-	/delete-property/ gpio;
-	gpio = <&msmgpio 114 0x0>;
-};
-
 &imx132 {
 	/delete-property/ gpios;
 	gpios = <&msmgpio 27 0>,
@@ -79,6 +74,7 @@
 
 	/include/ "batterydata-ft40-lg.dtsi"
 	/include/ "batterydata-ft40-sony.dtsi"
+	/include/ "batterydata-ft40-lishen.dtsi"
 };
 
 &i2c_2 {
@@ -91,4 +87,13 @@
 		/delete-property/ bmm,place;
 		bmm,place = <0>;
 	};
+};
+
+/ {
+	chosen {
+		mmi,clock_override = <0x01>;
+	};
+};
+&sdhc_2 {
+	qcom,pad-drv-on = <0x7 0x3 0x3>;  /* 16mA, 8mA, 8mA */
 };
