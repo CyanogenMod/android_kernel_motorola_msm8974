@@ -774,6 +774,9 @@ skip_wait:
 	if (cancel_delayed_work_sync(&ctx->ulps_work))
 		pr_debug("deleted pending ulps work\n");
 
+	mdss_mdp_ctl_intf_event(ctl,
+			MDSS_EVENT_REGISTER_RECOVERY_HANDLER,
+			NULL);
 
 	turn_off_panel = ctx->panel_on;
 

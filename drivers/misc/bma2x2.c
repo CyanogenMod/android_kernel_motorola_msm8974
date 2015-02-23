@@ -1388,6 +1388,7 @@ struct bma2x2_data {
 	struct mutex value_mutex;
 	struct mutex enable_mutex;
 	struct mutex mode_mutex;
+	struct workqueue_struct *work_queue;
 	struct delayed_work work;
 	struct work_struct irq_work;
 #ifdef CONFIG_HAS_EARLYSUSPEND
@@ -4770,14 +4771,16 @@ static void bma2x2_work_func(struct work_struct *work)
 
 	bma2x2_read_accel_xyz(bma2x2->bma2x2_client, bma2x2->sensor_type,
 									&acc);
-	input_report_abs(bma2x2->input, ABS_X, acc.x);
-	input_report_abs(bma2x2->input, ABS_Y, acc.y);
-	input_report_abs(bma2x2->input, ABS_Z, acc.z);
+	input_event(bma2x2->input, EV_MSC, MSC_SERIAL, acc.x);
+	input_event(bma2x2->input, EV_MSC, MSC_PULSELED, acc.y);
+	input_event(bma2x2->input, EV_MSC, MSC_GESTURE, acc.z);
+
 	input_sync(bma2x2->input);
 	mutex_lock(&bma2x2->value_mutex);
 	bma2x2->value = acc;
 	mutex_unlock(&bma2x2->value_mutex);
-	schedule_delayed_work(&bma2x2->work, delay);
+	queue_delayed_work(bma2x2->work_queue,
+		&bma2x2->work, delay);
 }
 #endif
 
@@ -5023,7 +5026,8 @@ static void bma2x2_set_enable(struct device *dev, int enable)
 			bma2x2_set_mode(bma2x2->bma2x2_client,
 					BMA2X2_MODE_NORMAL);
 #ifndef BMA_ENABLE_NEWDATA_INT
-			schedule_delayed_work(&bma2x2->work,
+			queue_delayed_work(bma2x2->work_queue,
+				&bma2x2->work,
 				msecs_to_jiffies(atomic_read(&bma2x2->delay)));
 #endif
 			atomic_set(&bma2x2->enable, 1);
@@ -5910,8 +5914,8 @@ static int bma2x2_set_en_disp_rotation_store(struct bma2x2_data *bma2x2, int en)
 		if (en) {
 			err = bma2x2_set_mode(bma2x2->bma2x2_client,
 						BMA2X2_MODE_NORMAL);
-			err = bma2x2_set_Int_Enable(client, 10, 1);
 			err = bma2x2_set_Int_Enable(client, 11, 1);
+			err = bma2x2_set_Int_Enable(client, 10, 1);
 		} else {
 			err = bma2x2_set_Int_Enable(client, 10, 0);
 			err = bma2x2_set_Int_Enable(client, 11, 0);
@@ -5935,6 +5939,16 @@ static ssize_t bma2x2_en_disp_rotation_store(struct device *dev,
 	error = kstrtoul(buf, 10, &data);
 	if (error)
 		return error;
+
+	if (data == 1) {
+		if (bma2x2->flip_value == 0) {
+			input_event(bma2x2->dev_for_interrupt,
+					EV_MSC, MSC_RAW, bma2x2->orient_value);
+			input_sync(bma2x2->dev_for_interrupt);
+		} else {
+			bma2x2->flip_value = 0;
+		}
+	}
 
 	if ((data == 0) || (data == 1))
 		bma2x2_set_en_disp_rotation_store(bma2x2, data);
@@ -6320,9 +6334,9 @@ static void bma2x2_irq_work_func(struct work_struct *work)
 		/* printk(KERN_INFO "New data interrupt happened\n");*/
 		bma2x2_read_accel_xyz(bma2x2->bma2x2_client,
 					bma2x2->sensor_type, &acc);
-		input_report_abs(bma2x2->input, ABS_X, acc.x);
-		input_report_abs(bma2x2->input, ABS_Y, acc.y);
-		input_report_abs(bma2x2->input, ABS_Z, acc.z);
+		input_event(bma2x2->input, EV_MSC, MSC_SERIAL, acc.x);
+		input_event(bma2x2->input, EV_MSC, MSC_PULSELED, acc.y);
+		input_event(bma2x2->input, EV_MSC, MSC_GESTURE, acc.z);
 		input_sync(bma2x2->input);
 		mutex_lock(&bma2x2->value_mutex);
 		bma2x2->value = acc;
@@ -6401,6 +6415,15 @@ static void bma2x2_irq_work_func(struct work_struct *work)
 			input_sync(bma2x2->dev_for_interrupt);
 			bma2x2->flip_value = 1;
 		} else {
+			if (bma2x2->flip_value == 0) {
+				bma2x2_get_orient_status(bma2x2->bma2x2_client,
+						&first_value);
+				if (bma2x2->orient_value != first_value) {
+					bma2x2->orient_value = first_value;
+					bma2x2_set_orient_mode(
+						bma2x2->bma2x2_client, 0);
+				}
+			}
 			bma2x2->flip_value = 0;
 			input_event(bma2x2->dev_for_interrupt,
 				EV_MSC, MSC_RAW, bma2x2->orient_value);
@@ -6661,7 +6684,7 @@ static irqreturn_t bma2x2_irq_handler(int irq, void *handle)
 		return IRQ_HANDLED;
 	if (data->bma2x2_client == NULL)
 		return IRQ_HANDLED;
-	schedule_work(&data->irq_work);
+	queue_work(data->work_queue, &data->irq_work);
 
 	return IRQ_HANDLED;
 }
@@ -6801,8 +6824,8 @@ static int bma2x2_probe(struct i2c_client *client,
 #endif
 #endif
 
-	bma2x2_set_Int_Mode(client, 1);/*latch interrupt 250ms*/
-/*	bma2x2_set_Int_Mode(client, 7); latched*/
+/*	bma2x2_set_Int_Mode(client, 1); latch interrupt 250ms*/
+	bma2x2_set_Int_Mode(client, 7);/*latched*/
 
 	/* do not open any interrupt here  */
 	/*10,orient
@@ -6831,6 +6854,7 @@ static int bma2x2_probe(struct i2c_client *client,
 	if (err)
 		printk(KERN_ERR "could not request irq\n");
 
+	data->work_queue = create_singlethread_workqueue("bma2x2");
 	INIT_WORK(&data->irq_work, bma2x2_irq_work_func);
 #endif
 
@@ -6855,9 +6879,10 @@ static int bma2x2_probe(struct i2c_client *client,
 	dev->name = SENSOR_NAME;
 	dev->id.bustype = BUS_I2C;
 	input_set_capability(dev, EV_ABS, ABS_MISC);
-	input_set_abs_params(dev, ABS_X, ABSMIN, ABSMAX, 0, 0);
-	input_set_abs_params(dev, ABS_Y, ABSMIN, ABSMAX, 0, 0);
-	input_set_abs_params(dev, ABS_Z, ABSMIN, ABSMAX, 0, 0);
+	input_set_capability(dev, EV_MSC, MSC_SERIAL);
+	input_set_capability(dev, EV_MSC, MSC_PULSELED);
+	input_set_capability(dev, EV_MSC, MSC_GESTURE);
+
 	input_set_capability(dev, EV_REL, BMA2X2_FAST_CALIB_DONE);
 	input_set_capability(dev, EV_REL, FIFO_WM_INTERRUPT);
 
@@ -7134,7 +7159,7 @@ static void bma2x2_late_resume(struct early_suspend *h)
 	if (atomic_read(&data->enable) == 1) {
 		bma2x2_set_mode(data->bma2x2_client, BMA2X2_MODE_NORMAL);
 #ifndef BMA_ENABLE_NEWDATA_INT
-		schedule_delayed_work(&data->work,
+		queue_delayed_work(data->work_queue, &data->work,
 				msecs_to_jiffies(atomic_read(&data->delay)));
 #endif
 	}
@@ -7150,6 +7175,7 @@ static int bma2x2_remove(struct i2c_client *client)
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	unregister_early_suspend(&data->early_suspend);
 #endif
+	destroy_workqueue(data->work_queue);
 	sysfs_remove_group(&data->input->dev.kobj, &bma2x2_attribute_group);
 	input_unregister_device(data->input);
 
@@ -7197,7 +7223,7 @@ static int bma2x2_resume(struct i2c_client *client)
 	if (atomic_read(&data->enable) == 1) {
 		bma2x2_set_mode(data->bma2x2_client, BMA2X2_MODE_NORMAL);
 #ifndef BMA_ENABLE_NEWDATA_INT
-		schedule_delayed_work(&data->work,
+		queue_delayed_work(data->work_queue, &data->work,
 				msecs_to_jiffies(atomic_read(&data->delay)));
 #endif
 	}

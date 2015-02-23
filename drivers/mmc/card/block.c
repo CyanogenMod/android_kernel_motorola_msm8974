@@ -1238,6 +1238,7 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 	struct mmc_blk_request *brq, int *ecc_err)
 {
 	bool prev_cmd_status_valid = true;
+	bool crc_err = false;
 	u32 status, stop_status = 0;
 	int err, retry;
 
@@ -1255,6 +1256,8 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 			break;
 
 		prev_cmd_status_valid = false;
+		if (err == -EILSEQ)
+			crc_err = true;
 		pr_err("%s: error %d sending status command, %sing\n",
 		       req->rq_disk->disk_name, err, retry ? "retry" : "abort");
 	}
@@ -1264,7 +1267,7 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 		/* Check if the card is removed */
 		if (mmc_detect_card_removed(card->host))
 			return ERR_NOMEDIUM;
-		if (err == -EILSEQ)
+		if (crc_err)
 			return ERR_BUS;
 		return ERR_ABORT;
 	}
@@ -1288,9 +1291,10 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 
 		/*
 		 * If the stop cmd also timed out, the card is probably
-		 * not present, so abort.  Other errors are bad news too.
+		 * not present, so abort.  Other errors are bad news too,
+		 * but if we saw a CRC error, don't abort quite yet.
 		 */
-		if (err)
+		if (err && !crc_err)
 			return ERR_ABORT;
 		if (stop_status & R1_CARD_ECC_FAILED)
 			*ecc_err = 1;
@@ -1362,6 +1366,7 @@ static int mmc_blk_reset(struct mmc_blk_data *md, struct mmc_host *host,
 {
 	struct mmc_card *card = host->card;
 	int result = 0;
+	s64 msec = 0;
 	int err;
 
 	/*
@@ -1377,15 +1382,23 @@ static int mmc_blk_reset(struct mmc_blk_data *md, struct mmc_host *host,
 
 		/*
 		 * Keep track of removable cards that are not stable and drop
-		 * them if the failure-to-success ratio is too high or the
-		 * total number of failures during the period is 10x the ratio.
+		 * them if the failure-to-success ratio is too high, the total
+		 * number of failures during the period is 10x the ratio, or the
+		 * card has been repeatedly failing for too long.
 		 */
+		if (card->failures == 0)
+			card->failure_time = ktime_get();
+		else
+			msec = ktime_to_ms(ktime_sub(ktime_get(),
+					   card->failure_time));
 		card->failures++;
+
 		if (card->failures >= (card->successes + 1) *
 				      md->failure_ratio ||
-		    card->failures >= md->failure_ratio * 10) {
-			pr_warning("%s: giving up on card (%u/%u, %llu/%llu)\n",
-				   mmc_hostname(host),
+		    card->failures >= md->failure_ratio * 10 ||
+		    msec > MMC_ERROR_MAX_TIME_MS) {
+			pr_warning("%s: giving up on card after %lld ms (%u/%u, %llu/%llu)\n",
+				   mmc_hostname(host), msec,
 				   card->failures, card->successes,
 				   host->request_errors, host->requests);
 			host->card_bad = 1;
@@ -1439,6 +1452,7 @@ static inline void mmc_blk_reset_success(struct mmc_blk_data *md,
 				host->request_errors, host->requests);
 			card->failures = 0;
 			card->successes = 0;
+			card->failure_time = ktime_set(0, 0);
 		}
 	}
 }
@@ -2791,7 +2805,7 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *rqc)
 			 * If this was a single-block read, try a slower bus
 			 * speed.
 			 */
-			if (brq->data.blocks == 1 &&
+			if (card->crc_errors >= MMC_THROTTLE_BACK_THRESHOLD &&
 			    mmc_blk_throttle_back(md, card->host) >= 0)
 				break;
 			/* Fall through */

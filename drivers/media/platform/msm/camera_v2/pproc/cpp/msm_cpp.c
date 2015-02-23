@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -272,10 +272,8 @@ static unsigned long msm_cpp_queue_buffer_info(struct cpp_device *cpp_dev,
 	return buff->map_info.phy_addr;
 
 QUEUE_BUFF_ERROR2:
-	ion_unmap_iommu(cpp_dev->client, buff->map_info.ion_handle,
-		cpp_dev->domain_num, 0);
-QUEUE_BUFF_ERROR1:
 	ion_free(cpp_dev->client, buff->map_info.ion_handle);
+QUEUE_BUFF_ERROR1:
 	buff->map_info.ion_handle = NULL;
 	kzfree(buff);
 
@@ -652,8 +650,12 @@ static int cpp_init_hardware(struct cpp_device *cpp_dev)
 			pr_err("Regulator cpp vdd get failed %ld\n",
 				PTR_ERR(cpp_dev->fs_cpp));
 			cpp_dev->fs_cpp = NULL;
+			rc = -EINVAL;
 			goto fs_failed;
-		} else if (regulator_enable(cpp_dev->fs_cpp)) {
+		}
+
+		rc = regulator_enable(cpp_dev->fs_cpp);
+		if (rc != 0) {
 			pr_err("Regulator cpp vdd enable failed\n");
 			regulator_put(cpp_dev->fs_cpp);
 			cpp_dev->fs_cpp = NULL;
@@ -729,7 +731,6 @@ static int cpp_init_hardware(struct cpp_device *cpp_dev)
 			IRQF_TRIGGER_RISING, "cpp", cpp_dev);
 		if (rc < 0) {
 			pr_err("irq request fail\n");
-			rc = -EBUSY;
 			goto req_irq_fail;
 		}
 		cpp_dev->buf_mgr_subdev = msm_buf_mngr_get_subdev();
@@ -839,7 +840,10 @@ static void cpp_load_fw(struct cpp_device *cpp_dev, char *fw_name_bin)
 
 		/*Start firmware loading*/
 		msm_cpp_write(MSM_CPP_CMD_FW_LOAD, cpp_dev->base);
-		msm_cpp_write(fw->size, cpp_dev->base);
+		if (fw)
+			msm_cpp_write(fw->size, cpp_dev->base);
+		else
+			msm_cpp_write(MSM_CPP_END_ADDRESS, cpp_dev->base);
 		msm_cpp_write(MSM_CPP_START_ADDRESS, cpp_dev->base);
 
 		if (ptr_bin) {
@@ -889,6 +893,7 @@ static void cpp_load_fw(struct cpp_device *cpp_dev, char *fw_name_bin)
 
 static int cpp_open_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
+	int rc;
 	uint32_t i;
 	struct cpp_device *cpp_dev = v4l2_get_subdevdata(sd);
 	CPP_DBG("E\n");
@@ -916,7 +921,15 @@ static int cpp_open_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	CPP_DBG("open %d %p\n", i, &fh->vfh);
 	cpp_dev->cpp_open_cnt++;
 	if (cpp_dev->cpp_open_cnt == 1) {
-		cpp_init_hardware(cpp_dev);
+		rc = cpp_init_hardware(cpp_dev);
+		if (rc < 0) {
+			cpp_dev->cpp_open_cnt--;
+			cpp_dev->cpp_subscribe_list[i].active = 0;
+			cpp_dev->cpp_subscribe_list[i].vfh = NULL;
+			mutex_unlock(&cpp_dev->mutex);
+			return rc;
+		}
+
 		iommu_attach_device(cpp_dev->domain, cpp_dev->iommu_ctx);
 		cpp_init_mem(cpp_dev);
 		cpp_dev->state = CPP_STATE_IDLE;
@@ -1611,18 +1624,24 @@ long msm_cpp_subdev_ioctl(struct v4l2_subdev *sd,
 		struct msm_queue_cmd *event_qcmd;
 		struct msm_cpp_frame_info_t *process_frame;
 		event_qcmd = msm_dequeue(queue, list_eventdata);
-		process_frame = event_qcmd->command;
-		CPP_DBG("fid %d\n", process_frame->frame_id);
-		if (copy_to_user((void __user *)ioctl_ptr->ioctl_ptr,
-				process_frame,
-				sizeof(struct msm_cpp_frame_info_t))) {
-					mutex_unlock(&cpp_dev->mutex);
-					return -EINVAL;
-		}
+		if (event_qcmd) {
+			process_frame = event_qcmd->command;
+			CPP_DBG("fid %d\n", process_frame->frame_id);
+			if (copy_to_user((void __user *)ioctl_ptr->ioctl_ptr,
+					process_frame,
+					sizeof(struct msm_cpp_frame_info_t))) {
+						mutex_unlock(&cpp_dev->mutex);
+						return -EINVAL;
+			}
 
-		kfree(process_frame->cpp_cmd_msg);
-		kfree(process_frame);
-		kfree(event_qcmd);
+			kfree(process_frame->cpp_cmd_msg);
+			kfree(process_frame);
+			kfree(event_qcmd);
+		} else {
+			pr_err("Empty command list\n");
+			mutex_unlock(&cpp_dev->mutex);
+			return -EFAULT;
+		}
 		break;
 	}
 	case MSM_SD_SHUTDOWN: {
@@ -1874,7 +1893,10 @@ static int __devinit cpp_probe(struct platform_device *pdev)
 	cpp_dev->msm_sd.sd.devnode->fops = &msm_cpp_v4l2_subdev_fops;
 	cpp_dev->msm_sd.sd.entity.revision = cpp_dev->msm_sd.sd.devnode->num;
 	cpp_dev->state = CPP_STATE_BOOT;
-	cpp_init_hardware(cpp_dev);
+
+	rc = cpp_init_hardware(cpp_dev);
+	if (rc < 0)
+		goto CPP_PROBE_INIT_ERROR;
 
 	msm_camera_io_w(0x0, cpp_dev->base +
 					   MSM_CPP_MICRO_IRQGEN_MASK);
@@ -1898,6 +1920,7 @@ static int __devinit cpp_probe(struct platform_device *pdev)
 		rc = -ENOMEM;
 		goto ERROR3;
 	}
+
 	INIT_WORK((struct work_struct *)cpp_dev->work, msm_cpp_do_timeout_work);
 	cpp_dev->cpp_open_cnt = 0;
 	cpp_dev->is_firmware_loaded = 0;
@@ -1905,6 +1928,9 @@ static int __devinit cpp_probe(struct platform_device *pdev)
 	atomic_set(&cpp_timer.used, 0);
 	cpp_dev->fw_name_bin = NULL;
 	return rc;
+CPP_PROBE_INIT_ERROR:
+	media_entity_cleanup(&cpp_dev->msm_sd.sd.entity);
+	msm_sd_unregister(&cpp_dev->msm_sd);
 ERROR3:
 	release_mem_region(cpp_dev->mem->start, resource_size(cpp_dev->mem));
 ERROR2:

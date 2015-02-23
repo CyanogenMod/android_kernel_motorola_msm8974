@@ -1,0 +1,91 @@
+/* Copyright (c) 2014, Motorola Mobility LLC
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/dts-v1/;
+
+/include/ "msm8226-moto-reserve.dtsi"
+/include/ "msm8926.dtsi"
+/include/ "msm8926-thea-common.dtsi"
+
+&imx132 {
+	/delete-property/ gpios;
+	gpios = <&msmgpio 26 0>,
+		<&msmgpio 36 0>,
+		<&msmgpio 114 0>,
+		<&msmgpio 35 0>;
+};
+
+&imx179 {
+	/delete-property/ gpios;
+	gpios = <&msmgpio 26 0>,
+		<&msmgpio 27 0>,
+		<&msmgpio 33 0>,
+		<&msmgpio 37 0>;
+};
+
+&soc {
+	gpiomux {
+		/delete-node/ pin@fd511c0; /* Remove GPIO_028 */
+		/delete-node/ pin@fd51680; /* Remove GPIO_104 */
+		/delete-node/ pin@fd51700; /* Remove GPIO_112 */
+
+		pin@fd511b0 {
+			reg = <0xfd5111b0 0x10>;	/* RCAM_AVDD_EN    */
+			qcom,pin-num = <27>;
+			qcom,active@0 {
+				qcom,func = <0>;  /* gpio_in_out(27)        */
+				qcom,pull = <3>;  /* pullup                 */
+				qcom,drv = <0>;   /* 2ma                    */
+				qcom,dir = <1>;   /* output high            */
+			};
+			qcom,suspend@1 {
+				qcom,func = <0>;  /* gpio_in_out(27)        */
+				qcom,pull = <1>;  /* down                   */
+				qcom,drv = <0>;   /* 2ma                    */
+				qcom,dir = <0>;   /* input                  */
+			};
+		};
+	};
+};
+
+&mmi_batterydata {
+	qcom,default-kohm = <20>;
+};
+
+&pm8226_chg {
+	qcom,batt-therm-offset = <(-50)>;
+};
+
+&i2c_2 {
+	bma2x2@11 {
+		/delete-property/ bma,place;
+		bma,place = <4>;
+	};
+
+	bmm050@13 {
+		/delete-property/ bmm,place;
+		bmm,place = <4>;
+	};
+};
+
+/ {
+	chosen {
+		/delete-property/ mmi,clock_override;
+	};
+};
+
+/ {
+	qcom,msm-id =   <145 0x51 0x81A0>, <145 0x52 0x81A0>, <145 0x53 0x81A0>, <145 0x54 0x81A0>, <145 0x55 0x81A0>;
+};
+&sdhc_2 {
+	qcom,pad-drv-on = <0x2 0x3 0x3>;  /* 6mA, 8mA, 8mA */
+};

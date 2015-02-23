@@ -360,6 +360,9 @@ struct mdss_dsi_ctrl_pdata {
 	struct dsi_panel_cmds hbm_off_cmds;
 	struct dsi_buf status_buf;
 	int status_mode;
+
+	u32 hbm_on_brts;
+	u32 hbm_off_brts;
 };
 
 struct dsi_status_data {
@@ -436,6 +439,9 @@ int mdss_dsi_panel_ioctl_handler(struct mdss_panel_data *pdata,
 					u32 cmd, void *arg);
 int mdss_panel_get_dst_fmt(u32 bpp, char mipi_mode, u32 pixel_packing,
 				char *dst_format);
+
+int mdss_dsi_register_recovery_handler(struct mdss_dsi_ctrl_pdata *ctrl,
+		struct mdss_panel_recovery *recovery);
 
 int mdss_dsi_register_recovery_handler(struct mdss_dsi_ctrl_pdata *ctrl,
 		struct mdss_panel_recovery *recovery);

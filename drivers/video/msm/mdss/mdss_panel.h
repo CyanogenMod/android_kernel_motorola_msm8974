@@ -176,6 +176,7 @@ enum mdss_intf_events {
 	MDSS_EVENT_DSI_CMDLIST_KOFF,
 	MDSS_EVENT_ENABLE_PARTIAL_UPDATE,
 	MDSS_EVENT_DSI_ULPS_CTRL,
+	MDSS_EVENT_REGISTER_RECOVERY_HANDLER,
 	MDSS_EVENT_ENABLE_TE,
 	MDSS_EVENT_ENABLE_HBM,
 	MDSS_EVENT_SET_CABC,
@@ -375,6 +376,7 @@ struct mdss_panel_info {
 	bool hbm_state;
 	bool dynamic_cabc_enabled;
 	enum cabc_mode cabc_mode;
+	char supplier[8];
 
 	uint32_t panel_dead;
 	bool dynamic_switch_pending;

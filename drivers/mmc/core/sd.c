@@ -699,11 +699,22 @@ out:
 
 static int mmc_sd_throttle_back(struct mmc_host *host)
 {
-	struct sd_switch_caps *sw_caps = &host->card->sw_caps;
+	struct sd_switch_caps *sw_caps;
 	char *speed = NULL;
+	int err = 0;
 
 	mmc_claim_host(host);
 
+	if (!host->card) {
+		err = -ENODEV;
+		goto out;
+	}
+
+	if (host->ops->tune_drive_strength &&
+	    host->ops->tune_drive_strength(host) == 0)
+		goto out;
+
+	sw_caps = &host->card->sw_caps;
 	if (mmc_sd_card_uhs(host->card)) {
 		if (sw_caps->sd3_bus_mode & SD_MODE_UHS_SDR104) {
 			sw_caps->sd3_bus_mode &= ~SD_MODE_UHS_SDR104;
@@ -723,18 +734,19 @@ static int mmc_sd_throttle_back(struct mmc_host *host)
 		speed = "legacy";
 	}
 
-	mmc_release_host(host);
-
 	if (speed)
 		pr_warning("%s: throttle back to %s\n",
 				mmc_hostname(host), speed);
 	else {
 		pr_err("%s: unable to throttle back further\n",
 				mmc_hostname(host));
-		return -EINVAL;
+		err = -EINVAL;
 	}
 
-	return 0;
+out:
+	mmc_release_host(host);
+
+	return err;
 }
 
 /*
@@ -1229,14 +1241,12 @@ static void mmc_sd_detect(struct mmc_host *host)
 		}
 		break;
 	}
-	if (!retries) {
+	if (!retries)
 		printk(KERN_ERR "%s(%s): Unable to re-detect card (%d)\n",
 		       __func__, mmc_hostname(host), err);
-		err = _mmc_detect_card_removed(host);
-	}
-#else
-	err = _mmc_detect_card_removed(host);
 #endif
+	err = _mmc_detect_card_removed(host);
+
 	mmc_release_host(host);
 
 	/*
@@ -1306,6 +1316,8 @@ static int mmc_sd_resume(struct mmc_host *host)
 			printk(KERN_ERR "%s: Re-init card rc = %d "
 				"(retries = %d, delay = %lu)\n",
 				mmc_hostname(host), err, retries, delay);
+			if (err == -EILSEQ && mmc_sd_throttle_back(host) == 0)
+				continue;
 			retries--;
 			mmc_power_off(host);
 			usleep_range(delay, delay + 500);
@@ -1464,6 +1476,8 @@ int mmc_attach_sd(struct mmc_host *host)
 	while (retries) {
 		err = mmc_sd_init_card(host, host->ocr, NULL);
 		if (err) {
+			if (err == -EILSEQ && mmc_sd_throttle_back(host) == 0)
+				continue;
 			retries--;
 			mmc_power_off(host);
 			usleep_range(delay, delay + 500);

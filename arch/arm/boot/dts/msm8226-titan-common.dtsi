@@ -85,6 +85,8 @@
 			ti,ledb-init-brt = <0xff>;
 			ti,leda-max-cur = <0x14>;
 			ti,ledb-max-cur = <0x14>;
+			ti,leda-max-hbm-cur = <0x1C>;
+			ti,ledb-max-hbm-cur = <0x1C>;
 			ti,boost-ctrl = <0x20>;
 			ti,config = <0x09>;
 			ti,irq-gpio = <&msmgpio 4 0>;
@@ -194,11 +196,11 @@
 		status = "ok";
 	};
 
-
 	qcom,msm-mem-hole {
-		compatible = "qcom,msm-mem-hole";
-		qcom,memblock-remove = <0x07300000 0x8300000
-					0x0fa00000 0x500000>; /* Address and size of the hole */
+                compatible = "qcom,msm-mem-hole";
+                qcom,memblock-remove = <0x08400000 0x4000000
+                                        0x0d200000 0x2400000
+                                        0x0fa00000 0x500000>; /* Address and Size of Hole */
 	};
 
 	usr_reset_warning {
@@ -222,6 +224,9 @@
 	mmi_batterydata: qcom,battery-data {
 		mmi,ed30-sony-batterydata {
 			qcom,batt-id-range = <403046 448366>;
+		};
+		mmi,ed30-sony-batterydata-alt {
+			qcom,batt-id-range = <670241 729130>;
 		};
 		mmi,ed30-lg-batterydata {
 			qcom,batt-id-range = <977044 1039064>;
@@ -270,6 +275,7 @@
 	qcom,clk-rates = <400000 25000000 50000000 100000000>;
 	qcom,bus-speed-mode = "DDR50", "DDR_1p8v";
 	qcom,nonremovable;
+	qcom,emmc;
 
 	status = "ok";
 };
@@ -290,7 +296,7 @@
 
 	qcom,pad-pull-on = <0x0 0x3 0x3>; /* no-pull, pull-up, pull-up */
 	qcom,pad-pull-off = <0x0 0x3 0x3>; /* no-pull, pull-up, pull-up */
-	qcom,pad-drv-on = <0x3 0x3 0x3>; /* 8mA, 8mA, 8mA */
+	qcom,pad-drv-on = <0x2 0x3 0x3>; /* 6mA, 8mA, 8mA */
 	qcom,pad-drv-off = <0x0 0x0 0x0>; /* 2mA, 2mA, 2mA */
 
 	qcom,clk-rates = <400000 23076923 50000000 100000000 120000000>;

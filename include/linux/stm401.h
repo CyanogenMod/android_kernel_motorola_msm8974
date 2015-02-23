@@ -124,6 +124,8 @@
 		_IOR(STM401_IOCTL_BASE, 53, unsigned char)
 #define STM401_IOCTL_SET_LOWPOWER_MODE \
 		_IOW(STM401_IOCTL_BASE, 54, char)
+#define STM401_IOCTL_SET_FLUSH \
+		_IOW(STM401_IOCTL_BASE, 55, int)
 
 #define FW_VERSION_SIZE 12
 #define STM401_CONTROL_REG_SIZE 200
@@ -174,6 +176,7 @@
 #define M_CAMERA_ACT		0x000800
 #define M_NFC			0x001000
 #define M_SIM			0x002000
+#define M_CHOPCHOP		0x004000
 #define M_LOG_MSG		0x008000
 
 #define M_IR_WAKE_GESTURE	0x200000
@@ -253,6 +256,8 @@ enum STM401_data_types {
 	DT_STEP_DETECTOR,
 	DT_UNCALIB_GYRO,
 	DT_UNCALIB_MAG,
+	DT_CHOPCHOP,
+	DT_FLUSH,
 };
 
 enum {
@@ -375,6 +380,7 @@ struct stm_response {
 #define CAMERA                          0x4C
 #define NFC                             0x4D
 #define SIM                             0x4E
+#define CHOPCHOP                        0x4F
 
 #define ALGO_CFG_ACCUM_MODALITY         0x5D
 #define ALGO_REQ_ACCUM_MODALITY         0x60
@@ -423,6 +429,7 @@ struct stm_response {
 #define STM401_BUSY_SLEEP_USEC	10000
 #define STM401_BUSY_RESUME_COUNT	14
 #define STM401_BUSY_SUSPEND_COUNT	6
+#define STM401_LATE_SUSPEND_TIMEOUT	400
 
 #define AOD_WAKEUP_REASON_ESD		4
 #define AOD_WAKEUP_REASON_QP_PREPARE		5
@@ -431,8 +438,8 @@ struct stm_response {
 #define AOD_WAKEUP_REASON_QP_COMPLETE		8
 
 #define AOD_QP_ACK_BUFFER_ID_MASK	0x3F
-#define AOD_QP_ACK_SUCCESS		0
-#define AOD_QP_ACK_BAD_MSG_ORDER	1
+#define AOD_QP_ACK_RCVD			0
+#define AOD_QP_ACK_DONE			1
 #define AOD_QP_ACK_INVALID		2
 #define AOD_QP_ACK_ESD_RECOVERED	3
 
@@ -442,8 +449,6 @@ struct stm_response {
 #define AOD_QP_ENABLED_VOTE_KERN		0x01
 #define AOD_QP_ENABLED_VOTE_USER		0x02
 #define AOD_QP_ENABLED_VOTE_MASK		0x03
-
-#define AOD_QP_TIMEOUT			(2*HZ)
 
 #define STM401_MAX_GENERIC_DATA		512
 
@@ -514,17 +519,12 @@ struct stm_response {
 #define STEP64_DATA	6
 #define SIM_DATA	0
 #define STEP_DETECT	0
+#define CHOPCHOP_DATA   0
 
 /* The following macros are intended to be called with the stm IRQ handlers */
 /* only and refer to local variables in those functions. */
 #define STM16_TO_HOST(x) ((short) be16_to_cpu(*((u16 *) (stm401_readbuff+(x)))))
 #define STM32_TO_HOST(x) ((short) be32_to_cpu(*((u32 *) (stm401_readbuff+(x)))))
-
-enum stm_quickpeek_state {
-	QP_IDLE,
-	QP_AWAKE,
-	QP_PREPARED
-};
 
 struct stm401_quickpeek_message {
 	u8 message;
@@ -614,17 +614,18 @@ struct stm401_data {
 	struct regulator *regulator_2;
 
 	/* Quick peek data */
-	enum stm_quickpeek_state quickpeek_state;
 	struct workqueue_struct *quickpeek_work_queue;
 	struct work_struct quickpeek_work;
 	struct wake_lock quickpeek_wakelock;
-	struct completion quickpeek_done;
 	struct list_head quickpeek_command_list;
+	wait_queue_head_t quickpeek_wait_queue;
 	atomic_t qp_enabled;
 	bool quickpeek_occurred;
 	unsigned short qw_irq_status;
 	struct stm401_aod_enabled_vote aod_enabled;
-	bool qw_in_progress;
+	bool qp_in_progress;
+	bool qp_prepared;
+	struct mutex qp_list_lock;
 
 	bool in_reset_and_init;
 	bool is_suspended;
@@ -697,14 +698,15 @@ int stm401_irq_wake_work_func_display_locked(struct stm401_data *ps_stm401,
 	unsigned short irq_status);
 unsigned short stm401_get_interrupt_status(struct stm401_data *ps_stm401,
 	unsigned char reg, int *err);
-int stm401_quickpeek_status_ack(struct stm401_data *ps_stm401,
-	struct stm401_quickpeek_message *qp_message, int ack_return);
 void stm401_quickpeek_work_func(struct work_struct *work);
 void stm401_quickpeek_reset_locked(struct stm401_data *ps_stm401);
-void stm401_vote_aod_enabled(struct stm401_data *ps_stm401, int voter,
+int stm401_quickpeek_disable_when_idle(struct stm401_data *ps_stm401);
+void stm401_vote_aod_enabled_locked(struct stm401_data *ps_stm401, int voter,
 	bool enable);
 void stm401_store_vote_aod_enabled(struct stm401_data *ps_stm401, int voter,
 	bool enable);
+void stm401_store_vote_aod_enabled_locked(struct stm401_data *ps_stm401,
+	int voter, bool enable);
 int stm401_resolve_aod_enabled_locked(struct stm401_data *ps_stm401);
 int stm401_display_handle_touch_locked(struct stm401_data *ps_stm401);
 int stm401_display_handle_quickpeek_locked(struct stm401_data *ps_stm401,

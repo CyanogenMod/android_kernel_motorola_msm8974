@@ -788,52 +788,47 @@ static int stm401_fb_notifier_callback(struct notifier_block *self,
 	struct stm401_data *ps_stm401 = container_of(self, struct stm401_data,
 		fb_notif);
 	int blank;
+	bool vote = false;
 
 	dev_dbg(&ps_stm401->client->dev, "%s+\n", __func__);
 
-	if (ps_stm401->in_reset_and_init || ps_stm401->mode == BOOTMODE) {
-		dev_warn(&ps_stm401->client->dev, "stm401 in reset or BOOTMODE...bailing\n");
+	if ((event != FB_EVENT_BLANK && event != FB_EARLY_EVENT_BLANK) ||
+	    !evdata || !evdata->data)
 		goto exit;
-	}
 
-	/* If we aren't interested in this event, skip it immediately ... */
+	blank = *(int *)evdata->data;
+
+	/* determine vote */
 	switch (event) {
 	case FB_EVENT_BLANK:
+		if (blank == FB_BLANK_UNBLANK)
+			goto exit; /* not interested in this event */
+		else
+			vote = true;
+		break;
 	case FB_EARLY_EVENT_BLANK:
+		if (blank == FB_BLANK_UNBLANK)
+			vote = false;
+		else
+			goto exit; /* not interested in these events */
 		break;
 	default:
 		goto exit;
 	}
 
-	if (!evdata || !evdata->data)
-		goto exit;
-
-	blank = *(int *)evdata->data;
-
 	if (ps_stm401->in_reset_and_init || ps_stm401->mode == BOOTMODE) {
 		/* store the kernel's vote */
-		if (event == FB_EARLY_EVENT_BLANK && blank == FB_BLANK_UNBLANK)
-			stm401_store_vote_aod_enabled(ps_stm401,
-				AOD_QP_ENABLED_VOTE_KERN, false);
-		else if (event == FB_EVENT_BLANK && blank > FB_BLANK_UNBLANK)
-			stm401_store_vote_aod_enabled(ps_stm401,
-				AOD_QP_ENABLED_VOTE_KERN, true);
+		stm401_store_vote_aod_enabled(ps_stm401,
+				AOD_QP_ENABLED_VOTE_KERN, vote);
 		dev_warn(&ps_stm401->client->dev, "stm401 in reset or BOOTMODE...bailing\n");
 		goto exit;
+	} else {
+		mutex_lock(&ps_stm401->lock);
+		stm401_vote_aod_enabled_locked(ps_stm401,
+			AOD_QP_ENABLED_VOTE_KERN, vote);
+		stm401_resolve_aod_enabled_locked(ps_stm401);
+		mutex_unlock(&ps_stm401->lock);
 	}
-
-	mutex_lock(&ps_stm401->lock);
-
-	if (event == FB_EARLY_EVENT_BLANK && blank == FB_BLANK_UNBLANK)
-		stm401_vote_aod_enabled(ps_stm401, AOD_QP_ENABLED_VOTE_KERN,
-			false);
-	else if (event == FB_EVENT_BLANK && blank > FB_BLANK_UNBLANK)
-		stm401_vote_aod_enabled(ps_stm401, AOD_QP_ENABLED_VOTE_KERN,
-			true);
-
-	stm401_resolve_aod_enabled_locked(ps_stm401);
-
-	mutex_unlock(&ps_stm401->lock);
 
 exit:
 	dev_dbg(&ps_stm401->client->dev, "%s-\n", __func__);
@@ -1114,15 +1109,16 @@ static int stm401_probe(struct i2c_client *client,
 	INIT_WORK(&ps_stm401->quickpeek_work, stm401_quickpeek_work_func);
 	wake_lock_init(&ps_stm401->quickpeek_wakelock, WAKE_LOCK_SUSPEND,
 		"stm401_quickpeek");
-	init_completion(&ps_stm401->quickpeek_done);
-	ps_stm401->quickpeek_state = QP_IDLE;
 	INIT_LIST_HEAD(&ps_stm401->quickpeek_command_list);
 	atomic_set(&ps_stm401->qp_enabled, 0);
-	ps_stm401->qw_in_progress = false;
+	ps_stm401->qp_in_progress = false;
+	ps_stm401->qp_prepared = false;
+	init_waitqueue_head(&ps_stm401->quickpeek_wait_queue);
 
 	ps_stm401->ignore_wakeable_interrupts = false;
 	ps_stm401->ignored_interrupts = 0;
 	ps_stm401->quickpeek_occurred = false;
+	mutex_init(&ps_stm401->qp_list_lock);
 
 	stm401_quickwakeup_init(ps_stm401);
 
@@ -1214,12 +1210,36 @@ static int stm401_remove(struct i2c_client *client)
 	return 0;
 }
 
+static void stm401_process_ignored_interrupts_locked(
+						struct stm401_data *ps_stm401)
+{
+	dev_dbg(&ps_stm401->client->dev, "%s\n", __func__);
+
+	ps_stm401->ignore_wakeable_interrupts = false;
+
+	if (ps_stm401->ignored_interrupts) {
+		ps_stm401->ignored_interrupts = 0;
+		wake_lock_timeout(&ps_stm401->wakelock, HZ);
+		queue_work(ps_stm401->irq_work_queue,
+			&ps_stm401->irq_wake_work);
+	}
+}
+
 static int stm401_resume(struct device *dev)
 {
 	struct stm401_data *ps_stm401 = i2c_get_clientdata(to_i2c_client(dev));
 	dev_dbg(&stm401_misc_data->client->dev, "%s\n", __func__);
 
 	mutex_lock(&ps_stm401->lock);
+
+	/* During a quickwake interrupts will be set as ignored at the end of
+	   quickpeek_work_func while the system is being re-suspended.  It is
+	   possible for the quickwake suspend process to fail and the system to
+	   be immediately resumed.  Since resume_early was already called before
+	   the quickwake started (and therefore before quickpeek_work_func
+	   disabled interrupts) we must re-enable interrupts here. */
+	stm401_process_ignored_interrupts_locked(ps_stm401);
+
 	ps_stm401->is_suspended = false;
 
 	if (ps_stm401->pending_wake_work) {
@@ -1231,6 +1251,23 @@ static int stm401_resume(struct device *dev)
 	if (stm401_irq_disable == 0)
 		queue_work(ps_stm401->irq_work_queue,
 			&ps_stm401->clear_interrupt_status_work);
+
+	mutex_unlock(&ps_stm401->lock);
+
+	return 0;
+}
+
+static int stm401_resume_early(struct device *dev)
+{
+	struct stm401_data *ps_stm401 = i2c_get_clientdata(to_i2c_client(dev));
+	dev_dbg(dev, "%s\n", __func__);
+
+	mutex_lock(&ps_stm401->lock);
+
+	/* If we received wakeable interrupts between suspend_late and
+	   suspend_noirq, we need to reschedule the irq work to be handled now
+	   that interrupts have been re-enabled. */
+	stm401_process_ignored_interrupts_locked(ps_stm401);
 
 	mutex_unlock(&ps_stm401->lock);
 
@@ -1250,6 +1287,19 @@ static int stm401_suspend(struct device *dev)
 	return 0;
 }
 
+static int stm401_suspend_late(struct device *dev)
+{
+	struct stm401_data *ps_stm401 = i2c_get_clientdata(to_i2c_client(dev));
+	dev_dbg(dev, "%s\n", __func__);
+
+	if (!wait_event_timeout(ps_stm401->quickpeek_wait_queue,
+		stm401_quickpeek_disable_when_idle(ps_stm401),
+		msecs_to_jiffies(STM401_LATE_SUSPEND_TIMEOUT)))
+		return -EBUSY;
+
+	return 0;
+}
+
 static int stm401_suspend_noirq(struct device *dev)
 {
 	struct stm401_data *ps_stm401 = i2c_get_clientdata(to_i2c_client(dev));
@@ -1260,28 +1310,16 @@ static int stm401_suspend_noirq(struct device *dev)
 	mutex_lock(&ps_stm401->lock);
 
 	/* If we received wakeable interrupts between finishing a quickwake and
-	   now, return an error and reschedule the work so we will resume to
-	   process it instead of dropping into suspend and interrupting it */
+	   now, return an error so we will resume to process it instead of
+	   dropping into suspend */
 	if (ps_stm401->ignored_interrupts) {
 		dev_info(dev,
 			"Force system resume to handle deferred interrupts [%d]\n",
 			ps_stm401->ignored_interrupts);
-		wake_lock_timeout(&ps_stm401->wakelock, HZ);
-		queue_work(ps_stm401->irq_work_queue,
-			&ps_stm401->irq_wake_work);
 		ret = -EBUSY;
 	}
 
-	ps_stm401->ignore_wakeable_interrupts = false;
-	ps_stm401->ignored_interrupts = 0;
 	ps_stm401->quickpeek_occurred = false;
-
-	/* Init this here, because there is the unlikely posibility that an
-	   entire quickpeek operation might occur in interrupt work before
-	   qw_check has a chance to run. In that case, the completion will
-	   have already been completed, and we don't want to lose that
-	   status, or qw_execute will block for no reason. */
-	INIT_COMPLETION(ps_stm401->quickpeek_done);
 
 	mutex_unlock(&ps_stm401->lock);
 
@@ -1290,7 +1328,9 @@ static int stm401_suspend_noirq(struct device *dev)
 
 static const struct dev_pm_ops stm401_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(stm401_suspend, stm401_resume)
+	.suspend_late = stm401_suspend_late,
 	.suspend_noirq = stm401_suspend_noirq,
+	.resume_early = stm401_resume_early,
 };
 
 static const struct i2c_device_id stm401_id[] = {

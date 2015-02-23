@@ -21,12 +21,22 @@
 		     "qcom,msm8226";
 };
 
-
 &soc {
 
 	spi@f9923000 {
 		/delete-node/ nmi326@0; /* Remove DTV */
 	};
+
+	sound-9302 {
+		fih,cdc-lineout-topspkr-boost-bp-gpio = <&msmgpio 104 0x1>;
+		fih,cdc-lineout-topspkr-boost-en-gpio = <&msmgpio 112 0x1>;
+	};
+        qcom,msm-mem-hole {
+                compatible = "qcom,msm-mem-hole";
+                qcom,memblock-remove = <0x07300000 0x8300000
+                                        0x0fa00000 0x500000>; /* Address and size of the hole */
+        };
+
 };
 
 &vdd_touch_vreg {
@@ -34,15 +44,56 @@
 	gpio = <&msmgpio 69 0x0>;
 };
 
-&vddio_disp_vreg {
-	/delete-property/ gpio;
-	gpio = <&msmgpio 114 0x0>;
-};
-
 &imx132 {
 	/delete-property/ gpios;
-	gpios = <&msmgpio 26 0>,
+	gpios = <&msmgpio 27 0>,
 		<&msmgpio 36 0>,
 		<&msmgpio 114 0>,
 		<&msmgpio 35 0>;
+};
+
+&imx179 {
+	/delete-property/ gpios;
+	gpios = <&msmgpio 26 0>,
+		<&msmgpio 28 0>,
+		<&msmgpio 33 0>,
+		<&msmgpio 37 0>;
+};
+
+&pm8226_chg {
+	qcom,batt-therm-offset = <(-20)>;
+};
+
+&mmi_batterydata {
+	qcom,default-kohm = <32>;
+
+	/delete-node/ mmi,ed30-temp-batterydata;
+	/delete-node/ mmi,ed30-sony-batterydata;
+	/delete-node/ mmi,ed30-sony-batterydata-alt;
+	/delete-node/ mmi,ed30-lg-batterydata;
+
+	/include/ "batterydata-ft40-lg.dtsi"
+	/include/ "batterydata-ft40-sony.dtsi"
+	/include/ "batterydata-ft40-lishen.dtsi"
+};
+
+&i2c_2 {
+	bma2x2@11 {
+		/delete-property/ bma,place;
+		bma,place = <0>;
+	};
+
+	bmm050@13 {
+		/delete-property/ bmm,place;
+		bmm,place = <0>;
+	};
+};
+
+/ {
+	chosen {
+		mmi,clock_override = <0x01>;
+	};
+};
+&sdhc_2 {
+	qcom,pad-drv-on = <0x7 0x3 0x3>;  /* 16mA, 8mA, 8mA */
 };

@@ -74,15 +74,14 @@ void stm401_irq_wake_work_func(struct work_struct *work)
 	if (ps_stm401->mode == BOOTMODE)
 		goto EXIT_NO_WAKE;
 
-	/* This is to handle the case of having completed a quickwake and
-	   receiving another wakeable interrupt before we reach suspend. By
-	   the nature of quickwake, we are already going into suspend here
-	   so the only way to ensure we can process this interrupt is to
-	   throw an error at the last suspend step (noirq) so that we
-	   resume to handle this interrupt properly */
+	/* This is to handle the case of receiving an interrupt after
+	   suspend_late, but before interrupts were globally disabled. If this
+	   is the case, interrupts might be disabled now, so we cannot handle
+	   this at this time. suspend_noirq will return BUSY if this happens
+	   so that we can handle these interrupts. */
 	if (ps_stm401->ignore_wakeable_interrupts) {
 		dev_info(&ps_stm401->client->dev,
-			"Interrupt received after quickwake complete, defer until next resume\n");
+			"Deferring interrupt work\n");
 		ps_stm401->ignored_interrupts++;
 		goto EXIT_NO_WAKE;
 	}
@@ -320,6 +319,21 @@ void stm401_irq_wake_work_func(struct work_struct *work)
 
 		dev_dbg(&ps_stm401->client->dev, "Sending SIM Value=%d\n",
 					STM16_TO_HOST(SIM_DATA));
+	}
+	if (irq_status & M_CHOPCHOP) {
+		stm401_cmdbuff[0] = CHOPCHOP;
+		err = stm401_i2c_write_read(ps_stm401, stm401_cmdbuff, 1, 2);
+		if (err < 0) {
+			dev_err(&ps_stm401->client->dev,
+				"Reading chopchop data from stm failed\n");
+			goto EXIT;
+		}
+
+		stm401_as_data_buffer_write(ps_stm401, DT_CHOPCHOP,
+						stm401_readbuff, 2, 0);
+
+		dev_dbg(&ps_stm401->client->dev, "ChopChop triggered. Gyro aborts=%d\n",
+				STM16_TO_HOST(CHOPCHOP_DATA));
 	}
 	if (irq2_status & M_MMOVEME) {
 		unsigned char status;

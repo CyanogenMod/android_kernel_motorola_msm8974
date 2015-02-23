@@ -19,9 +19,19 @@ static int esdfs_create(struct inode *dir, struct dentry *dentry,
 	struct dentry *lower_dentry;
 	struct dentry *lower_parent_dentry = NULL;
 	struct path lower_path, saved_path;
+	struct inode *lower_inode;
 	int mask;
-	const struct cred *creds =
-			esdfs_override_creds(ESDFS_SB(dir->i_sb), &mask);
+	const struct cred *creds;
+
+	/*
+	 * Need to recheck derived permissions unified mode to prevent certain
+	 * applications from creating files at the root.
+	 */
+	if (test_opt(ESDFS_SB(dir->i_sb), DERIVE_UNIFIED) &&
+	    esdfs_check_derived_permission(dir, ESDFS_MAY_CREATE) != 0)
+		return -EACCES;
+
+	creds = esdfs_override_creds(ESDFS_SB(dir->i_sb), &mask);
 	if (!creds)
 		return -ENOMEM;
 
@@ -33,22 +43,12 @@ static int esdfs_create(struct inode *dir, struct dentry *dentry,
 	if (err)
 		goto out_unlock;
 
-	/*
-	 * Don't allow file creation at the root in unified mode.  Other
-	 * restrictions, including hash lookups, were done previously via
-	 * esdfs_permission().
-	 */
-	if (test_opt(ESDFS_SB(dir->i_sb), DERIVE_UNIFIED) &&
-	    ESDFS_I(dir)->tree == ESDFS_TREE_ROOT) {
-		err = -EACCES;
-		goto out_unlock;
-	}
-
 	esdfs_set_lower_mode(ESDFS_SB(dir->i_sb), &mode);
 
+	lower_inode = esdfs_lower_inode(dir);
 	pathcpy(&saved_path, &nd->path);
 	pathcpy(&nd->path, &lower_path);
-	err = vfs_create(lower_parent_dentry->d_inode, lower_dentry, mode, nd);
+	err = vfs_create(lower_inode, lower_dentry, mode, nd);
 	pathcpy(&nd->path, &saved_path);
 	if (err)
 		goto out;
@@ -176,7 +176,11 @@ static int esdfs_rmdir(struct inode *dir, struct dentry *dentry)
 	if (!creds)
 		return -ENOMEM;
 
-	esdfs_get_lower_path(dentry, &lower_path);
+	/* Never remove a pseudo link target.  Only the source. */
+	if (ESDFS_DENTRY_HAS_STUB(dentry))
+		esdfs_get_lower_stub_path(dentry, &lower_path);
+	else
+		esdfs_get_lower_path(dentry, &lower_path);
 	lower_dentry = lower_path.dentry;
 	lower_dir_dentry = lock_parent(lower_dentry);
 
@@ -223,8 +227,15 @@ static int esdfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	if (!creds)
 		return -ENOMEM;
 
-	esdfs_get_lower_path(old_dentry, &lower_old_path);
-	esdfs_get_lower_path(new_dentry, &lower_new_path);
+	/* Never rename to or from a pseudo hard link target. */
+	if (ESDFS_DENTRY_HAS_STUB(old_dentry))
+		esdfs_get_lower_stub_path(old_dentry, &lower_old_path);
+	else
+		esdfs_get_lower_path(old_dentry, &lower_old_path);
+	if (ESDFS_DENTRY_HAS_STUB(new_dentry))
+		esdfs_get_lower_stub_path(new_dentry, &lower_new_path);
+	else
+		esdfs_get_lower_path(new_dentry, &lower_new_path);
 	lower_old_dentry = lower_old_path.dentry;
 	lower_new_dentry = lower_new_path.dentry;
 	esdfs_get_lower_parent(old_dentry, lower_old_dentry,
@@ -265,6 +276,11 @@ static int esdfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 					lower_old_dir_dentry->d_inode);
 	}
 
+	/* Drop any old links */
+	if (ESDFS_DENTRY_HAS_STUB(old_dentry))
+		d_drop(old_dentry);
+	if (ESDFS_DENTRY_HAS_STUB(new_dentry))
+		d_drop(new_dentry);
 out_err:
 	mnt_drop_write(lower_new_path.mnt);
 out_drop_old_write:
@@ -314,6 +330,7 @@ static int esdfs_setattr(struct dentry *dentry, struct iattr *ia)
 	struct inode *lower_inode;
 	struct path lower_path;
 	struct iattr lower_ia;
+	const struct cred *creds;
 
 	/* We don't allow chmod or chown, so skip those */
 	ia->ia_valid &= ~(ATTR_UID | ATTR_GID | ATTR_MODE);
@@ -329,7 +346,11 @@ static int esdfs_setattr(struct dentry *dentry, struct iattr *ia)
 	 */
 	err = inode_change_ok(inode, ia);
 	if (err)
-		goto out_err;
+		return err;
+
+	creds = esdfs_override_creds(ESDFS_SB(dentry->d_inode->i_sb), NULL);
+	if (!creds)
+		return -ENOMEM;
 
 	esdfs_get_lower_path(dentry, &lower_path);
 	lower_dentry = lower_path.dentry;
@@ -384,29 +405,45 @@ static int esdfs_setattr(struct dentry *dentry, struct iattr *ia)
 
 out:
 	esdfs_put_lower_path(dentry, &lower_path);
-out_err:
+	esdfs_revert_creds(creds, NULL);
 	return err;
 }
 
 static int esdfs_getattr(struct vfsmount *mnt, struct dentry *dentry,
 		 struct kstat *stat)
 {
-	struct dentry *lower_dentry;
-	struct inode *inode;
-	struct inode *lower_inode;
+	int err;
 	struct path lower_path;
-
-	inode = dentry->d_inode;
+	struct vfsmount *lower_mount;
+	struct dentry *lower_dentry;
+	struct kstat lower_stat;
+	struct inode *lower_inode;
+	struct inode *inode = dentry->d_inode;
+	const struct cred *creds =
+			esdfs_override_creds(ESDFS_SB(inode->i_sb), NULL);
+	if (!creds)
+		return -ENOMEM;
 
 	esdfs_get_lower_path(dentry, &lower_path);
+	lower_mount = lower_path.mnt;
 	lower_dentry = lower_path.dentry;
+
+	/* We need the lower getattr to calculate stat->blocks for us. */
+	err = vfs_getattr(lower_mount, lower_dentry, &lower_stat);
+	if (err)
+		goto out;
+
 	lower_inode = esdfs_lower_inode(inode);
-
 	esdfs_copy_attr(inode, lower_inode);
-
+	fsstack_copy_inode_size(inode, lower_inode);
 	generic_fillattr(inode, stat);
+
+	stat->blocks = lower_stat.blocks;
+
+out:
 	esdfs_put_lower_path(dentry, &lower_path);
-	return 0;
+	esdfs_revert_creds(creds, NULL);
+	return err;
 }
 
 const struct inode_operations esdfs_symlink_iops = {

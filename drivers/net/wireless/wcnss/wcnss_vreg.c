@@ -284,6 +284,19 @@ xo_configure:
 		reg &= ~WCNSS_PMU_CFG_IRIS_RESET;
 		writel_relaxed(reg, pmu_conf_reg);
 
+		/* Reset IRIS */
+		reg |= WCNSS_PMU_CFG_IRIS_RESET;
+		writel_relaxed(reg, pmu_conf_reg);
+
+		/* Wait for PMU_CFG.iris_reg_reset_sts */
+		while (readl_relaxed(pmu_conf_reg) &
+				WCNSS_PMU_CFG_IRIS_RESET_STS)
+			cpu_relax();
+
+		/* Reset iris reset bit */
+		reg &= ~WCNSS_PMU_CFG_IRIS_RESET;
+		writel_relaxed(reg, pmu_conf_reg);
+
 		/* Start IRIS XO configuration */
 		reg |= WCNSS_PMU_CFG_IRIS_XO_CFG;
 		writel_relaxed(reg, pmu_conf_reg);

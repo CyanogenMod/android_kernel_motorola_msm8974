@@ -18,6 +18,10 @@ static ssize_t esdfs_read(struct file *file, char __user *buf,
 	int err;
 	struct file *lower_file;
 	struct dentry *dentry = file->f_path.dentry;
+	const struct cred *creds =
+			esdfs_override_creds(ESDFS_SB(dentry->d_sb), NULL);
+	if (!creds)
+		return -ENOMEM;
 
 	lower_file = esdfs_lower_file(file);
 	err = vfs_read(lower_file, buf, count, ppos);
@@ -26,6 +30,7 @@ static ssize_t esdfs_read(struct file *file, char __user *buf,
 		fsstack_copy_attr_atime(dentry->d_inode,
 					lower_file->f_path.dentry->d_inode);
 
+	esdfs_revert_creds(creds, NULL);
 	return err;
 }
 
@@ -35,6 +40,10 @@ static ssize_t esdfs_write(struct file *file, const char __user *buf,
 	int err = 0;
 	struct file *lower_file;
 	struct dentry *dentry = file->f_path.dentry;
+	const struct cred *creds =
+			esdfs_override_creds(ESDFS_SB(dentry->d_sb), NULL);
+	if (!creds)
+		return -ENOMEM;
 
 	lower_file = esdfs_lower_file(file);
 	err = vfs_write(lower_file, buf, count, ppos);
@@ -46,6 +55,7 @@ static ssize_t esdfs_write(struct file *file, const char __user *buf,
 				lower_file->f_path.dentry->d_inode);
 	}
 
+	esdfs_revert_creds(creds, NULL);
 	return err;
 }
 
@@ -54,6 +64,10 @@ static int esdfs_readdir(struct file *file, void *dirent, filldir_t filldir)
 	int err = 0;
 	struct file *lower_file = NULL;
 	struct dentry *dentry = file->f_path.dentry;
+	const struct cred *creds =
+			esdfs_override_creds(ESDFS_SB(dentry->d_sb), NULL);
+	if (!creds)
+		return -ENOMEM;
 
 	lower_file = esdfs_lower_file(file);
 	err = vfs_readdir(lower_file, filldir, dirent);
@@ -61,6 +75,7 @@ static int esdfs_readdir(struct file *file, void *dirent, filldir_t filldir)
 	if (err >= 0)		/* copy the atime */
 		fsstack_copy_attr_atime(dentry->d_inode,
 					lower_file->f_path.dentry->d_inode);
+	esdfs_revert_creds(creds, NULL);
 	return err;
 }
 
@@ -170,6 +185,10 @@ static int esdfs_open(struct inode *inode, struct file *file)
 	int err = 0;
 	struct file *lower_file = NULL;
 	struct path lower_path;
+	const struct cred *creds =
+			esdfs_override_creds(ESDFS_SB(inode->i_sb), NULL);
+	if (!creds)
+		return -ENOMEM;
 
 	/* don't open unhashed/deleted files */
 	if (d_unhashed(file->f_path.dentry)) {
@@ -204,6 +223,7 @@ static int esdfs_open(struct inode *inode, struct file *file)
 	else
 		esdfs_copy_attr(inode, esdfs_lower_inode(inode));
 out_err:
+	esdfs_revert_creds(creds, NULL);
 	return err;
 }
 
@@ -241,6 +261,10 @@ static int esdfs_fsync(struct file *file, loff_t start, loff_t end,
 	struct file *lower_file;
 	struct path lower_path;
 	struct dentry *dentry = file->f_path.dentry;
+	const struct cred *creds =
+			esdfs_override_creds(ESDFS_SB(dentry->d_sb), NULL);
+	if (!creds)
+		return -ENOMEM;
 
 	err = generic_file_fsync(file, start, end, datasync);
 	if (err)
@@ -250,6 +274,7 @@ static int esdfs_fsync(struct file *file, loff_t start, loff_t end,
 	err = vfs_fsync_range(lower_file, start, end, datasync);
 	esdfs_put_lower_path(dentry, &lower_path);
 out:
+	esdfs_revert_creds(creds, NULL);
 	return err;
 }
 
@@ -262,6 +287,85 @@ static int esdfs_fasync(int fd, struct file *file, int flag)
 	if (lower_file->f_op && lower_file->f_op->fasync)
 		err = lower_file->f_op->fasync(fd, lower_file, flag);
 
+	return err;
+}
+
+static ssize_t esdfs_aio_read(struct kiocb *iocb, const struct iovec *iov,
+			       unsigned long nr_segs, loff_t pos)
+{
+	int err = -EINVAL;
+	struct file *file, *lower_file;
+
+	file = iocb->ki_filp;
+	lower_file = esdfs_lower_file(file);
+	if (!lower_file->f_op->aio_read)
+		goto out;
+	/*
+	 * It appears safe to rewrite this iocb, because in
+	 * do_io_submit@fs/aio.c, iocb is a just copy from user.
+	 */
+	get_file(lower_file); /* prevent lower_file from being released */
+	iocb->ki_filp = lower_file;
+	err = lower_file->f_op->aio_read(iocb, iov, nr_segs, pos);
+	iocb->ki_filp = file;
+	fput(lower_file);
+	/* update upper inode atime as needed */
+	if (err >= 0 || err == -EIOCBQUEUED)
+		fsstack_copy_attr_atime(file->f_path.dentry->d_inode,
+					lower_file->f_path.dentry->d_inode);
+out:
+	return err;
+}
+
+static ssize_t esdfs_aio_write(struct kiocb *iocb, const struct iovec *iov,
+				unsigned long nr_segs, loff_t pos)
+{
+	int err = -EINVAL;
+	struct file *file, *lower_file;
+
+	file = iocb->ki_filp;
+	lower_file = esdfs_lower_file(file);
+	if (!lower_file->f_op->aio_write)
+		goto out;
+	/*
+	 * It appears safe to rewrite this iocb, because in
+	 * do_io_submit@fs/aio.c, iocb is a just copy from user.
+	 */
+	get_file(lower_file); /* prevent lower_file from being released */
+	iocb->ki_filp = lower_file;
+	err = lower_file->f_op->aio_write(iocb, iov, nr_segs, pos);
+	iocb->ki_filp = file;
+	fput(lower_file);
+	/* update upper inode times/sizes as needed */
+	if (err >= 0 || err == -EIOCBQUEUED) {
+		fsstack_copy_inode_size(file->f_path.dentry->d_inode,
+					lower_file->f_path.dentry->d_inode);
+		fsstack_copy_attr_times(file->f_path.dentry->d_inode,
+					lower_file->f_path.dentry->d_inode);
+	}
+out:
+	return err;
+}
+
+/*
+ * Wrapfs cannot use generic_file_llseek as ->llseek, because it would
+ * only set the offset of the upper file.  So we have to implement our
+ * own method to set both the upper and lower file offsets
+ * consistently.
+ */
+static loff_t esdfs_file_llseek(struct file *file, loff_t offset, int whence)
+{
+	int err;
+	struct file *lower_file;
+
+	err = generic_file_llseek(file, offset, whence);
+	if (err < 0)
+		goto out;
+
+	lower_file = esdfs_lower_file(file);
+	err = generic_file_llseek(lower_file, offset, whence);
+
+out:
 	return err;
 }
 
@@ -279,11 +383,13 @@ const struct file_operations esdfs_main_fops = {
 	.release	= esdfs_file_release,
 	.fsync		= esdfs_fsync,
 	.fasync		= esdfs_fasync,
+	.aio_read	= esdfs_aio_read,
+	.aio_write	= esdfs_aio_write,
 };
 
 /* trimmed directory options */
 const struct file_operations esdfs_dir_fops = {
-	.llseek		= generic_file_llseek,
+	.llseek		= esdfs_file_llseek,
 	.read		= generic_read_dir,
 	.readdir	= esdfs_readdir,
 	.unlocked_ioctl	= esdfs_unlocked_ioctl,
