@@ -1125,10 +1125,6 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 	case MDSS_EVENT_DSI_ULPS_CTRL:
 		rc = mdss_dsi_ulps_config(ctrl_pdata, (int)arg);
 		break;
-	case MDSS_EVENT_REGISTER_RECOVERY_HANDLER:
-		rc = mdss_dsi_register_recovery_handler(ctrl_pdata,
-			(struct mdss_panel_recovery *)arg);
-		break;
 	case MDSS_EVENT_SET_CABC:
 		if (ctrl_pdata->set_cabc)
 			rc = ctrl_pdata->set_cabc(ctrl_pdata, (int)arg);
