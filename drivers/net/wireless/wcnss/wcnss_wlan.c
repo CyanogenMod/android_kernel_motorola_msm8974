@@ -1949,7 +1949,7 @@ static void wcnss_send_pm_config(struct work_struct *worker)
 	u32 *payload;
 
 	if (!of_find_property(penv->pdev->dev.of_node,
-				"qcom,cnss-pm", &prop_len))
+				"qcom,wcnss-pm", &prop_len))
 		return ;
 
 	msg = kmalloc((sizeof(struct smd_msg_hdr) + prop_len), GFP_KERNEL);
@@ -1960,7 +1960,7 @@ static void wcnss_send_pm_config(struct work_struct *worker)
 
 	payload = (u32 *)(msg+sizeof(struct smd_msg_hdr));
 	rc = of_property_read_u32_array(penv->pdev->dev.of_node,
-		"qcom,cnss-pm", payload, prop_len >> 2);
+		"qcom,wcnss-pm", payload, prop_len >> 2);
 
 	if (rc < 0)
 		pr_err("wcnss: property read failed\n");

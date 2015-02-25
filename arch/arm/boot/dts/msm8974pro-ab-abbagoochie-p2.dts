@@ -36,7 +36,7 @@
 
 	qcom,wcnss-wlan@fb000000 {
 		qcom,iris-vddpa-supply = <&pm8941_l19>;
-		qcom,cnss-pm = <11 19 1200 1 1>;
+		qcom,wcnss-pm = <11 19 1200 1 1>;
 	};
 };
 
