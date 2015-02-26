@@ -157,7 +157,7 @@ struct cpufreq_governor cpufreq_gov_interactive = {
  * more frequently to correctly narrow down the right frequency.
  */
 
-static unsigned int check_fast_load = 99;
+static unsigned int check_fast_load = 999;
 
 /*
  * The load to target when the current cpu_load exceeds the check_fast_load
