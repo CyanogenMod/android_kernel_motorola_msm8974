@@ -36,18 +36,12 @@
 
 &mot_smd_1080p_cmd_v1 {
 	qcom,cont-splash-enabled;
-	qcom,partial-update-enabled;
-	qcom,panel-roi-alignment = <8 8 4 4 8 8>;
 	mmi,quickdraw-enabled;
-	mmi,partial-mode-enabled;
 };
 
 &mot_smd_1080p_cmd_v0 {
 	qcom,cont-splash-enabled;
-	qcom,partial-update-enabled;
-	qcom,panel-roi-alignment = <8 8 4 4 8 8>;
 	mmi,quickdraw-enabled;
-	mmi,partial-mode-enabled;
 };
 
 &mdss_dsi0 {
