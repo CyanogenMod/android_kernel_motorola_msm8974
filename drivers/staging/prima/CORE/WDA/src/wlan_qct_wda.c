@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2015 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -5556,6 +5556,10 @@ void WDA_SetLinkStateCallback(WDI_Status status, void* pUserData)
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam) ;
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
+
        VOS_ASSERT(0);
        return ;
    }
@@ -5577,14 +5581,9 @@ void WDA_SetLinkStateCallback(WDI_Status status, void* pUserData)
     * No respone required for WDA_SET_LINK_STATE so free the request 
     * param here
     */
-   if( pWdaParams != NULL )
-   {
-      if( pWdaParams->wdaWdiApiMsgParam != NULL )
-      {
-         vos_mem_free(pWdaParams->wdaWdiApiMsgParam) ;
-      }
-      vos_mem_free(pWdaParams);
-   }
+   vos_mem_free(pWdaParams->wdaWdiApiMsgParam) ;
+   vos_mem_free(pWdaParams);
+
    return ;
 }
 /*
@@ -6005,6 +6004,10 @@ void WDA_AddBAReqCallback(WDI_AddBARspinfoType *pAddBARspParams,
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam) ;
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
+
        VOS_ASSERT(0);
        return ;
    }
@@ -6099,6 +6102,9 @@ void WDA_AddBASessionReqCallback(
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam) ;
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
        VOS_ASSERT(0);
        return ;
    }
@@ -6574,6 +6580,10 @@ void WDA_AddTSReqCallback(WDI_Status status, void* pUserData)
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam) ;
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
+
        VOS_ASSERT(0);
        return ;
    }
@@ -7161,6 +7171,9 @@ void WDA_SetMaxTxPowerCallBack(WDI_SetMaxTxPowerRspMsg * pwdiSetMaxTxPowerRsp,
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam);
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
        VOS_ASSERT(0);
        return ;
    }
@@ -7277,6 +7290,9 @@ void WDA_SetMaxTxPowerPerBandCallBack(WDI_SetMaxTxPowerPerBandRspMsg
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam);
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
        VOS_ASSERT(0);
        return ;
    }
@@ -7392,6 +7408,9 @@ void WDA_SetTxPowerCallBack(WDI_SetTxPowerRspMsg * pwdiSetMaxTxPowerRsp,
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam);
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
        VOS_ASSERT(0);
        return ;
    }
@@ -7602,6 +7621,9 @@ void WDA_SetTDLSLinkEstablishReqParamsCallback(WDI_SetTdlsLinkEstablishReqResp *
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam);
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
        VOS_ASSERT(0);
        return ;
    }
@@ -7726,6 +7748,9 @@ void WDA_SetTDLSChanSwitchReqParamsCallback(WDI_SetTdlsChanSwitchReqResp *wdiSet
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam);
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
        VOS_ASSERT(0);
        return ;
    }
@@ -7839,6 +7864,10 @@ void WDA_AggrAddTSReqCallback(WDI_Status status, void* pUserData)
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam) ;
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
+
        VOS_ASSERT(0);
        return ;
    }
@@ -8011,6 +8040,9 @@ void WDA_EnterImpsRspCallback(WDI_Status status, void* pUserData)
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam);
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
        VOS_ASSERT(0);
        return ;
    }
@@ -8048,6 +8080,10 @@ void WDA_EnterImpsReqCallback(WDI_Status wdiStatus, void* pUserData)
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam);
+       vos_mem_free(pWdaParams->wdaMsgParam);
+       vos_mem_free(pWdaParams);
+
        VOS_ASSERT(0);
        return ;
    }
@@ -11086,6 +11122,10 @@ void WDA_BtAmpEventRespCallback(WDI_Status status, void* pUserData)
    {
        VOS_TRACE( VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
                "%s:pWDA is NULL", __func__);
+       vos_mem_free(pWdaParams->wdaMsgParam) ;
+       vos_mem_free(pWdaParams->wdaWdiApiMsgParam);
+       vos_mem_free(pWdaParams) ;
+
        VOS_ASSERT(0);
        return ;
    }
