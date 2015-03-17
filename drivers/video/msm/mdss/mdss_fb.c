@@ -1548,7 +1548,6 @@ static int mdss_fb_alloc_fbmem_iommu(struct msm_fb_data_type *mfd, int dom)
 		pr_debug("fbmem is not reserved for %s\n", pdev->name);
 		mfd->fbi->screen_base = NULL;
 		mfd->fbi->fix.smem_start = 0;
-		mfd->fbi->fix.smem_len = 0;
 		return 0;
 	} else {
 		const u32 *addr;
