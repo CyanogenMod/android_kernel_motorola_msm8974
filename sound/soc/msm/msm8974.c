@@ -1497,6 +1497,23 @@ static int msm_slim_5_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	return 0;
 }
 
+static int msm_be_tfa9890_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
+				struct snd_pcm_hw_params *params)
+{
+	struct snd_interval *rate = hw_param_interval(params,
+					SNDRV_PCM_HW_PARAM_RATE);
+
+	struct snd_interval *channels =
+	    hw_param_interval(params, SNDRV_PCM_HW_PARAM_CHANNELS);
+
+	pr_debug("%s()\n", __func__);
+	rate->min = rate->max = 48000;
+	channels->min = channels->max = 2;
+	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT, SNDRV_PCM_FORMAT_S16_LE);
+
+	return 0;
+}
+
 static int msm_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 				struct snd_pcm_hw_params *params)
 {
@@ -3684,7 +3701,7 @@ static struct snd_soc_dai_link  msm8974_tfa9890_dai_link[] = {
 		.codec_dai_name = "tfa9890_codec_left",
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_QUATERNARY_MI2S_RX,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.be_hw_params_fixup = msm_be_tfa9890_hw_params_fixup,
 		.ops = &msm8974_mi2s_quat_be_ops,
 		/* dai link has playback support */
 		.ignore_pmdown_time = 1,
@@ -3701,7 +3718,7 @@ static struct snd_soc_dai_link  msm8974_tfa9890_dai_link[] = {
 		.init = &msm_tfa9890_stereo_init,
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_QUATERNARY_MI2S_RX,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.be_hw_params_fixup = msm_be_tfa9890_hw_params_fixup,
 		.ops = &msm8974_mi2s_quat_be_ops,
 		/* dai link has playback support */
 		.ignore_pmdown_time = 1,
