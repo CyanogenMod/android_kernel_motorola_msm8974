@@ -1507,9 +1507,12 @@ static int msm_be_tfa9890_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	    hw_param_interval(params, SNDRV_PCM_HW_PARAM_CHANNELS);
 
 	pr_debug("%s()\n", __func__);
+
 	rate->min = rate->max = 48000;
-	channels->min = channels->max = 2;
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT, SNDRV_PCM_FORMAT_S16_LE);
+
+	if (! channels->min)
+		channels->min = channels->max = 2;
 
 	return 0;
 }
