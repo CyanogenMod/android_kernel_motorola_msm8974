@@ -3534,7 +3534,7 @@ static int bif_add_known_slaves_from_dt(struct bif_ctrl_dev *bdev,
 					struct device_node *of_node)
 {
 	int len = 0;
-	int rc, i;
+	int rc = 0, i;
 	u32 addr;
 	const __be32 *val;
 

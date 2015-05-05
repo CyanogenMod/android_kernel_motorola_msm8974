@@ -229,7 +229,7 @@ static void qpnp_blink_enable_leds(void)
 	struct pwm_config_data *pwm;
 	struct qpnp_led_data *led;
 	u8 lpg_map = 0;
-	struct spmi_device *spmi_dev;
+	struct spmi_device *spmi_dev = NULL;
 
 	for (i = 0; i < blink_cnt; i++) {
 		led = blink_array[i].led;
@@ -262,7 +262,7 @@ static void qpnp_blink_enable_leds(void)
 		/* Start all ramps with one write command */
 		ret = spmi_ext_register_writel(spmi_dev->ctrl, LUT_RAMP_SID,
 			LUT_RAMP_CONTROL, &lpg_map, 1);
-		if (ret)
+		if (ret && spmi_dev)
 			dev_err(&spmi_dev->dev,
 				"Unable set lut enable rc(%d)\n", ret);
 	}
