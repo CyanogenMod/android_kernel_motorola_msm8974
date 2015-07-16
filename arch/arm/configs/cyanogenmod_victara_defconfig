@@ -1208,7 +1208,7 @@ CONFIG_RFKILL_LEDS=y
 # CONFIG_CEPH_LIB is not set
 # CONFIG_NFC is not set
 # CONFIG_PN544 is not set
-CONFIG_NFC_QNCI=y
+# CONFIG_NFC_QNCI is not set
 CONFIG_BCM2079X=y
 
 #
