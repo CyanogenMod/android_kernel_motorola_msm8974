@@ -1708,6 +1708,7 @@ void hdd_init_frame_logging(hdd_context_t *pHddCtx);
 
 int hdd_enable_disable_ca_event(hdd_context_t *pHddCtx,
                                 tANI_U8* command, tANI_U8 cmd_len);
+void hdd_indicate_mgmt_frame(tSirSmeMgmtFrameInd *frame_ind);
 
 #ifdef WLAN_FEATURE_LINK_LAYER_STATS
 /**
@@ -1729,5 +1730,8 @@ static inline void hdd_init_ll_stat_ctx(void)
     return;
 }
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
+void hdd_wlan_free_wiphy_channels(struct wiphy *wiphy);
+void hdd_initialize_adapter_common(hdd_adapter_t *pAdapter);
+
 
 #endif    // end #if !defined( WLAN_HDD_MAIN_H )
