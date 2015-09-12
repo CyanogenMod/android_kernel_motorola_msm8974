@@ -164,6 +164,10 @@
 				"factory_cable_detect",
 				"factory_warn";
 	};
+
+	qcom,bam_dmux@fc834000 {
+		qcom,fast-shutdown;
+	};
 };
 
 &slim_msm {
