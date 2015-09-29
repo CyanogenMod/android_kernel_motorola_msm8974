@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2015, Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2014, Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1102,8 +1102,7 @@ phcd_retry:
 				phy_ctrl_val |= PHY_OTGSESSVLDHV_INTEN;
 		}
 		if (host_bus_suspend)
-			phy_ctrl_val |= (PHY_CLAMP_DPDMSE_EN |PHY_DMSE_INTEN |
-						PHY_DPSE_INTEN);
+			phy_ctrl_val |= PHY_CLAMP_DPDMSE_EN;
 
 		if (!(motg->caps & ALLOW_VDD_MIN_WITH_RETENTION_DISABLED)) {
 			writel_relaxed(phy_ctrl_val & ~PHY_RETEN, USB_PHY_CTRL);
@@ -1265,8 +1264,7 @@ static int msm_otg_resume(struct msm_otg *motg)
 			/* Disable PHY HV interrupts */
 			phy_ctrl_val &=
 				~(PHY_IDHV_INTEN | PHY_OTGSESSVLDHV_INTEN);
-		phy_ctrl_val &= ~(PHY_CLAMP_DPDMSE_EN | PHY_DMSE_INTEN |
-					PHY_DPSE_INTEN);
+		phy_ctrl_val &= ~(PHY_CLAMP_DPDMSE_EN);
 		writel_relaxed(phy_ctrl_val, USB_PHY_CTRL);
 		motg->lpm_flags &= ~PHY_RETENTIONED;
 	}
@@ -3973,19 +3971,6 @@ static int otg_power_set_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_HEALTH:
 		motg->usbin_health = val->intval;
 		break;
-	case POWER_SUPPLY_PROP_LOW_POWER:
-		if (!!val->intval == atomic_read(&motg->in_lpm))
-			return 0;
-
-		if (val->intval) {
-			pm_runtime_put_noidle(motg->phy.otg->phy->dev);
-			pm_runtime_mark_last_busy(motg->phy.otg->phy->dev);
-			pm_runtime_autosuspend(motg->phy.otg->phy->dev);
-			motg->pm_done = 1;
-		} else {
-			pm_runtime_get_sync(motg->phy.otg->phy->dev);
-		}
-		break;
 	default:
 		return -EINVAL;
 	}
@@ -4003,7 +3988,6 @@ static int otg_power_property_is_writeable_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_ONLINE:
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
-	case POWER_SUPPLY_PROP_LOW_POWER:
 		return 1;
 	default:
 		break;
