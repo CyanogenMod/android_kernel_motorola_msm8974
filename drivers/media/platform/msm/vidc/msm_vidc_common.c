@@ -933,22 +933,16 @@ static void handle_sys_error(enum command_response cmd, void *data)
 			list) {
 		mutex_lock(&inst->lock);
 		inst->state = MSM_VIDC_CORE_INVALID;
-		if (inst->core)
-			hdev = inst->core->device;
-		if (hdev && inst->session) {
-			dprintk(VIDC_DBG,
-			"cleaning up inst: 0x%p\n", inst);
-			rc = call_hfi_op(hdev, session_clean,
-				(void *) inst->session);
-			if (rc)
-				dprintk(VIDC_ERR,
-					"Sess clean failed :%p\n",
-					inst);
-		}
-		inst->session = NULL;
 		mutex_unlock(&inst->lock);
 		msm_vidc_queue_v4l2_event(inst,
 				V4L2_EVENT_MSM_VIDC_SYS_ERROR);
+	}
+
+	hdev = core->device;
+	if (!hdev) {
+		dprintk(VIDC_ERR, "hdev in core is NULL\n");
+		mutex_unlock(&core->lock);
+		return;
 	}
 
         if (core->state == VIDC_CORE_INVALID) {
@@ -972,11 +966,35 @@ static void handle_sys_error(enum command_response cmd, void *data)
 	mutex_unlock(&core->lock);
 }
 
+void msm_comm_session_clean(struct msm_vidc_inst *inst)
+{
+	int rc = 0;
+	struct hfi_device *hdev = NULL;
+
+	if (!inst || !inst->core || !inst->core->device) {
+		dprintk(VIDC_ERR, "%s invalid params\n", __func__);
+		return;
+	}
+
+	hdev = inst->core->device;
+	mutex_lock(&inst->lock);
+	if (hdev && inst->session) {
+		dprintk(VIDC_DBG, "cleaning up instance: 0x%p\n", inst);
+		rc = call_hfi_op(hdev, session_clean,
+				(void *) inst->session);
+		if (rc) {
+			dprintk(VIDC_ERR,
+				"Session clean failed :%p\n", inst);
+		}
+		inst->session = NULL;
+	}
+	mutex_unlock(&inst->lock);
+}
+
 static void handle_session_close(enum command_response cmd, void *data)
 {
 	struct msm_vidc_cb_cmd_done *response = data;
 	struct msm_vidc_inst *inst;
-	struct hfi_device *hdev = NULL;
 
 	if (response) {
 		inst = (struct msm_vidc_inst *)response->session_id;
@@ -984,15 +1002,7 @@ static void handle_session_close(enum command_response cmd, void *data)
 			dprintk(VIDC_ERR, "%s invalid params\n", __func__);
 			return;
 		}
-		hdev = inst->core->device;
-		mutex_lock(&inst->lock);
-		if (inst->session) {
-			dprintk(VIDC_DBG, "cleaning up inst: 0x%p", inst);
-			call_hfi_op(hdev, session_clean,
-				(void *) inst->session);
-		}
-		inst->session = NULL;
-		mutex_unlock(&inst->lock);
+		msm_comm_session_clean(inst);
 		signal_session_msg_receipt(cmd, inst);
 		show_stats(inst);
 	} else {
@@ -1285,9 +1295,17 @@ static void handle_fbd(enum command_response cmd, void *data)
 			time_usec = fill_buf_done->timestamp_hi;
 			time_usec = (time_usec << 32) |
 				fill_buf_done->timestamp_lo;
-			vb->v4l2_buf.timestamp =
-				ns_to_timeval(time_usec * NSEC_PER_USEC);
+		} else {
+			time_usec = 0;
+			dprintk(VIDC_DBG,
+					"Set zero timestamp for buffer 0x%pa, filled: %d, (hi:%u, lo:%u)\n",
+					&fill_buf_done->packet_buffer1,
+					fill_buf_done->filled_len1,
+					fill_buf_done->timestamp_hi,
+					fill_buf_done->timestamp_lo);
 		}
+		vb->v4l2_buf.timestamp =
+			ns_to_timeval(time_usec * NSEC_PER_USEC);
 		vb->v4l2_buf.flags = 0;
 		extra_idx =
 			EXTRADATA_IDX(inst->fmts[CAPTURE_PORT]->num_planes);
@@ -2533,9 +2551,9 @@ int msm_comm_qbuf(struct vb2_buffer *vb)
 				goto err_no_mem;
 			}
 			entry->vb = vb;
-			mutex_lock(&inst->sync_lock);
-			list_add_tail(&entry->list, &inst->pendingq);
-			mutex_unlock(&inst->sync_lock);
+			mutex_lock(&inst->pendingq.lock);
+			list_add_tail(&entry->list, &inst->pendingq.list);
+			mutex_unlock(&inst->pendingq.lock);
 	} else {
 		int64_t time_usec = timeval_to_ns(&vb->v4l2_buf.timestamp);
 		do_div(time_usec, NSEC_PER_USEC);
@@ -3102,7 +3120,8 @@ void msm_comm_flush_pending_dynamic_buffers(struct msm_vidc_inst *inst)
 	if (inst->buffer_mode_set[CAPTURE_PORT] != HAL_BUFFER_MODE_DYNAMIC)
 		return;
 
-	if (list_empty(&inst->pendingq) || list_empty(&inst->registered_bufs))
+	if (list_empty(&inst->pendingq.list) ||
+		list_empty(&inst->registered_bufs))
 		return;
 
 	list = &inst->registered_bufs;
@@ -3172,9 +3191,9 @@ int msm_comm_flush(struct msm_vidc_inst *inst, u32 flags)
 		return 0;
 	}
 
-	mutex_lock(&inst->sync_lock);
 	if (inst->in_reconfig && !ip_flush && op_flush) {
-		if (!list_empty(&inst->pendingq)) {
+		mutex_lock(&inst->pendingq.lock);
+		if (!list_empty(&inst->pendingq.list)) {
 			/*Execution can never reach here since port reconfig
 			 * wont happen unless pendingq is emptied out
 			 * (both pendingq and flush being secured with same
@@ -3182,6 +3201,7 @@ int msm_comm_flush(struct msm_vidc_inst *inst, u32 flags)
 			dprintk(VIDC_WARN,
 			"FLUSH BUG: Pending q not empty! It should be empty\n");
 		}
+		mutex_unlock(&inst->pendingq.lock);
 		rc = call_hfi_op(hdev, session_flush, inst->session,
 				HAL_FLUSH_OUTPUT);
 		if (!rc && (msm_comm_get_stream_output_mode(inst) ==
@@ -3190,35 +3210,33 @@ int msm_comm_flush(struct msm_vidc_inst *inst, u32 flags)
 				HAL_FLUSH_OUTPUT2);
 
 	} else {
-		if (!list_empty(&inst->pendingq)) {
-			msm_comm_flush_pending_dynamic_buffers(inst);
+		msm_comm_flush_pending_dynamic_buffers(inst);
 
-			/*If flush is called after queueing buffers but before
-			 * streamon driver should flush the pending queue*/
-			list_for_each_safe(ptr, next, &inst->pendingq) {
-				temp =
-				list_entry(ptr, struct vb2_buf_entry, list);
-				if (temp->vb->v4l2_buf.type ==
-					V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
-					lock = &inst->bufq[CAPTURE_PORT].lock;
-				else
-					lock = &inst->bufq[OUTPUT_PORT].lock;
-				temp->vb->v4l2_planes[0].bytesused = 0;
-				mutex_lock(lock);
-				vb2_buffer_done(temp->vb, VB2_BUF_STATE_DONE);
-				mutex_unlock(lock);
-				list_del(&temp->list);
-				kfree(temp);
-			}
+		/*If flush is called after queueing buffers but before
+		 * streamon driver should flush the pending queue*/
+		mutex_lock(&inst->pendingq.lock);
+		list_for_each_safe(ptr, next, &inst->pendingq.list) {
+			temp =
+			list_entry(ptr, struct vb2_buf_entry, list);
+			if (temp->vb->v4l2_buf.type ==
+				V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
+				lock = &inst->bufq[CAPTURE_PORT].lock;
+			else
+				lock = &inst->bufq[OUTPUT_PORT].lock;
+			temp->vb->v4l2_planes[0].bytesused = 0;
+			mutex_lock(lock);
+			vb2_buffer_done(temp->vb, VB2_BUF_STATE_DONE);
+			mutex_unlock(lock);
+			list_del(&temp->list);
+			kfree(temp);
 		}
-
+		mutex_unlock(&inst->pendingq.lock);
 		/*Do not send flush in case of session_error */
 		if (!(inst->state == MSM_VIDC_CORE_INVALID &&
 			  core->state != VIDC_CORE_INVALID))
 			rc = call_hfi_op(hdev, session_flush, inst->session,
 				HAL_FLUSH_ALL);
 	}
-	mutex_unlock(&inst->sync_lock);
 	return rc;
 }
 
