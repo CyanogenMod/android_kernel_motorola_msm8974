@@ -146,6 +146,7 @@ static ssize_t fb_quickdraw_store_lock(struct fb_quickdraw_buffer *buffer,
 	default:
 		pr_err("%s: Invalid state passed[%d]. Valid values are 0 (unlock), 1 (lock non-blocking) and 2 (lock blocking)\n",
 		       __func__, state);
+		ret = -EINVAL;
 	}
 
 	if (ret == -EINVAL) {
