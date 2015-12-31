@@ -1401,6 +1401,7 @@ need_lock:
 	return ret;
 }
 
+#ifdef CONFIG_DEBUG_FS
 void mdss_dsi_debug_check_te(struct mdss_panel_data *pdata)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
@@ -1434,6 +1435,7 @@ void mdss_dsi_debug_check_te(struct mdss_panel_data *pdata)
 	}
 	pr_info(" ============ finish waiting for TE ============\n");
 }
+#endif
 
 static void dsi_send_events(struct mdss_dsi_ctrl_pdata *ctrl, u32 events)
 {

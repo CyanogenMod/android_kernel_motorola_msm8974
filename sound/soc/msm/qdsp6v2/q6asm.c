@@ -335,6 +335,10 @@ outbuf_fail:
 	return;
 }
 #else
+int q6asm_mmap_apr_dereg(void)
+{
+	return 0;
+}
 static void config_debug_fs_write(struct audio_buffer *ab)
 {
 	return;
