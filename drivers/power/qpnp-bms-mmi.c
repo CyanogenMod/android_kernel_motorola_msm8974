@@ -1523,7 +1523,7 @@ static int get_prop_bms_current_now(struct qpnp_bms_chip *chip)
 /* Returns coulomb counter in uAh */
 static int get_prop_bms_charge_counter(struct qpnp_bms_chip *chip)
 {
-	int64_t cc_raw;
+	int64_t cc_raw = 0;
 
 	mutex_lock(&chip->bms_output_lock);
 	lock_output_data(chip);
@@ -1537,7 +1537,7 @@ static int get_prop_bms_charge_counter(struct qpnp_bms_chip *chip)
 /* Returns shadow coulomb counter in uAh */
 static int get_prop_bms_charge_counter_shadow(struct qpnp_bms_chip *chip)
 {
-	int64_t cc_raw;
+	int64_t cc_raw = 0;
 
 	mutex_lock(&chip->bms_output_lock);
 	lock_output_data(chip);
@@ -1551,7 +1551,7 @@ static int get_prop_bms_charge_counter_shadow(struct qpnp_bms_chip *chip)
 /* Reads and returns coulomb counter in uAh, without calling pm_stay_awake() */
 static int get_bms_charge_counter_pmsafe(struct qpnp_bms_chip *chip)
 {
-	int64_t cc_raw;
+	int64_t cc_raw = 0;
 
 	mutex_lock(&chip->bms_output_lock);
 	lock_output_data(chip);
